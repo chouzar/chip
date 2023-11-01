@@ -1,11 +1,6 @@
-import gleam/io
 import gleam/map.{Map}
 import gleam/erlang/process.{ProcessDown, ProcessMonitor, Subject}
 import gleam/otp/actor.{StartError}
-
-pub fn main() {
-  io.println("Hello from chip!")
-}
 
 pub opaque type Message(name, message) {
   Register(name: name, subject: Subject(message))
