@@ -9,6 +9,7 @@ pub fn main() {
 
 pub opaque type Message(name, message) {
   Register(name: name, subject: Subject(message))
+  Unregister(name: name)
 }
 
 pub fn start() {
@@ -20,7 +21,7 @@ pub fn register(registry, name: name, subject: Subject(message)) -> Nil {
 }
 
 pub fn unregister(registry, name: name) -> Nil {
-  todo
+  process.send(registry, Unregister(name))
 }
 
 pub fn find(registry, name: name) {
@@ -33,6 +34,12 @@ fn handle_message(message, state) {
       // TODO: temporarily stored internally here.
       // Eventually dispatch to a store (GenServer, ets, DB)
       let state = map.insert(state, name, subject)
+
+      actor.continue(state)
+    }
+
+    Unregister(name) -> {
+      let state = map.delete(state, name)
 
       actor.continue(state)
     }
