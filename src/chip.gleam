@@ -1,6 +1,6 @@
 import gleam/io
-import gleam/map
-import gleam/erlang/process.{Subject}
+import gleam/map.{Map}
+import gleam/erlang/process.{ProcessDown, ProcessMonitor, Subject}
 import gleam/otp/actor
 
 pub fn main() {
@@ -10,6 +10,11 @@ pub fn main() {
 pub opaque type Message(name, message) {
   Register(name: name, subject: Subject(message))
   Unregister(name: name)
+  Find(client: Subject(Subject(message)), name: name)
+}
+
+pub opaque type Record(message) {
+  Record(subject: Subject(message), monitor: ProcessMonitor)
 }
 
 pub fn start() {
@@ -25,22 +30,49 @@ pub fn unregister(registry, name: name) -> Nil {
 }
 
 pub fn find(registry, name: name) {
-  todo
+  process.call(registry, fn(self) { Find(self, name) }, 100)
 }
 
-fn handle_message(message, state) {
+fn handle_message(
+  message: Message(name, subject_message),
+  state: Map(name, Record(subject_message)),
+) {
   case message {
     Register(name, subject) -> {
+      // Start monitoring the pid within this process
+      let monitor =
+        subject
+        |> process.subject_owner()
+        |> process.monitor_process()
+
       // TODO: temporarily stored internally here.
       // Eventually dispatch to a store (GenServer, ets, DB)
-      let state = map.insert(state, name, subject)
+      let state = map.insert(state, name, Record(subject, monitor))
 
+      // When a process down message is received map it to an unregister message
+      let handle_down = fn(_down: ProcessDown) { Unregister(name) }
+
+      let handle_process_down =
+        process.new_selector()
+        |> process.selecting_process_down(monitor, handle_down)
+
+      // Continue with handle down selector
       actor.continue(state)
+      |> actor.with_selector(handle_process_down)
     }
 
     Unregister(name) -> {
+      // TODO: handle this case
+      let assert Ok(Record(_subject, monitor)) = map.get(state, name)
+      process.demonitor_process(monitor)
       let state = map.delete(state, name)
+      actor.continue(state)
+    }
 
+    Find(client, name) -> {
+      // TODO: handle this case
+      let assert Ok(Record(subject, _monitor)) = map.get(state, name)
+      process.send(client, subject)
       actor.continue(state)
     }
   }
