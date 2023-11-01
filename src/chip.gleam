@@ -1,14 +1,40 @@
+//// A pure gleam process registry that plays along types and gleam OTP abstractions.
+//// Will automatically delist dead processes. 
+//// 
+//// ## Example
+//// 
+//// ```gleam
+//// import gleam/erlang/process
+//// import chip
+//// 
+//// // Names can be built out of any primitive or even types.
+//// type Name {
+////   A
+////   B
+//// }
+////
+//// // We can start the registry and register a new subject 
+//// let assert Ok(registry) = chip.start()
+//// chip.register(registry, A, process.new_subject())
+//// 
+//// // If we lose scope of our processes, just look it up in the registry!
+//// let assert Ok(subject) = chip.find(registry, A)
+//// let assert Error(chip.NotFound) = chip.find(registry, B)
+//// ```
+
 import gleam/map.{Map}
 import gleam/erlang/process.{ProcessDown, ProcessMonitor, Subject}
 import gleam/otp/actor.{StartError}
 
+/// These are the possible messages that our registry can handle, this is an opaque
+/// type so you would use these commands through the equivalent functions.
 pub opaque type Message(name, message) {
   Register(name: name, subject: Subject(message))
   Unregister(name: name)
   Find(client: Subject(Result(Subject(message), Errors)), name: name)
 }
 
-pub opaque type Record(message) {
+type Record(message) {
   Record(subject: Subject(message), monitor: ProcessMonitor)
 }
 
@@ -17,18 +43,51 @@ pub type Errors {
   NotFound
 }
 
+/// Starts our registry.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chit.start()
+/// Ok(registry)
+/// ```
 pub fn start() -> Result(Subject(Message(name, message)), StartError) {
+  // TODO: Maybe a phatom type to delineate the name type would be useful
   actor.start(map.new(), handle_message)
 }
 
+/// Manually registers a `Subject` within the registry.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chit.register(registry, "MyProcess", process.new_subject())
+/// Nil
+/// ```
 pub fn register(registry, name: name, subject: Subject(message)) -> Nil {
   process.send(registry, Register(name, subject))
 }
 
+/// Manually unregister a `Subject` within the registry.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chit.unregister(registry, "MyProcess")
+/// Nil
+/// ```
 pub fn unregister(registry, name: name) -> Nil {
   process.send(registry, Unregister(name))
 }
 
+/// Looks up a subject through its given name.
+/// 
+/// ### Example
+/// 
+/// ```gleam
+/// > chit.find(reigstry, "MyProcess") 
+/// Ok(subject)
+/// ```
 pub fn find(registry, name: name) -> Result(Subject(message), Errors) {
   process.call(registry, fn(self) { Find(self, name) }, 100)
 }
