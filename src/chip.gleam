@@ -1,7 +1,7 @@
 import gleam/io
 import gleam/map.{Map}
 import gleam/erlang/process.{ProcessDown, ProcessMonitor, Subject}
-import gleam/otp/actor
+import gleam/otp/actor.{StartError}
 
 pub fn main() {
   io.println("Hello from chip!")
@@ -18,10 +18,11 @@ pub opaque type Record(message) {
 }
 
 pub type Errors {
+  // TODO: NameTaken
   NotFound
 }
 
-pub fn start() {
+pub fn start() -> Result(Subject(Message(name, message)), StartError) {
   actor.start(map.new(), handle_message)
 }
 
