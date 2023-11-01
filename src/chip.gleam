@@ -10,11 +10,15 @@ pub fn main() {
 pub opaque type Message(name, message) {
   Register(name: name, subject: Subject(message))
   Unregister(name: name)
-  Find(client: Subject(Subject(message)), name: name)
+  Find(client: Subject(Result(Subject(message), Errors)), name: name)
 }
 
 pub opaque type Record(message) {
   Record(subject: Subject(message), monitor: ProcessMonitor)
+}
+
+pub type Errors {
+  NotFound
 }
 
 pub fn start() {
@@ -29,7 +33,7 @@ pub fn unregister(registry, name: name) -> Nil {
   process.send(registry, Unregister(name))
 }
 
-pub fn find(registry, name: name) {
+pub fn find(registry, name: name) -> Result(Subject(message), Errors) {
   process.call(registry, fn(self) { Find(self, name) }, 100)
 }
 
@@ -62,18 +66,31 @@ fn handle_message(
     }
 
     Unregister(name) -> {
-      // TODO: handle this case
-      let assert Ok(Record(_subject, monitor)) = map.get(state, name)
-      process.demonitor_process(monitor)
-      let state = map.delete(state, name)
-      actor.continue(state)
+      case map.get(state, name) {
+        Ok(Record(_subject, monitor)) -> {
+          process.demonitor_process(monitor)
+          let state = map.delete(state, name)
+          actor.continue(state)
+        }
+
+        Error(Nil) -> {
+          actor.continue(state)
+        }
+      }
     }
 
     Find(client, name) -> {
-      // TODO: handle this case
-      let assert Ok(Record(subject, _monitor)) = map.get(state, name)
-      process.send(client, subject)
-      actor.continue(state)
+      case map.get(state, name) {
+        Ok(Record(subject, _monitor)) -> {
+          process.send(client, Ok(subject))
+          actor.continue(state)
+        }
+
+        Error(Nil) -> {
+          process.send(client, Error(NotFound))
+          actor.continue(state)
+        }
+      }
     }
   }
 }
