@@ -48,7 +48,7 @@ pub type Errors {
 /// ## Example
 /// 
 /// ```gleam
-/// > chit.start()
+/// > chip.start()
 /// Ok(registry)
 /// ```
 pub fn start() -> Result(Subject(Message(name, message)), StartError) {
@@ -61,7 +61,7 @@ pub fn start() -> Result(Subject(Message(name, message)), StartError) {
 /// ## Example
 /// 
 /// ```gleam
-/// > chit.register(registry, "MyProcess", process.new_subject())
+/// > chip.register(registry, "MyProcess", process.new_subject())
 /// Nil
 /// ```
 pub fn register(registry, name: name, subject: Subject(message)) -> Nil {
@@ -73,7 +73,7 @@ pub fn register(registry, name: name, subject: Subject(message)) -> Nil {
 /// ## Example
 /// 
 /// ```gleam
-/// > chit.unregister(registry, "MyProcess")
+/// > chip.unregister(registry, "MyProcess")
 /// Nil
 /// ```
 pub fn unregister(registry, name: name) -> Nil {
@@ -85,7 +85,7 @@ pub fn unregister(registry, name: name) -> Nil {
 /// ### Example
 /// 
 /// ```gleam
-/// > chit.find(reigstry, "MyProcess") 
+/// > chip.find(reigstry, "MyProcess") 
 /// Ok(subject)
 /// ```
 pub fn find(registry, name: name) -> Result(Subject(message), Errors) {
