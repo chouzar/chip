@@ -36,14 +36,16 @@ pub fn find_test() {
 
   // Register the process and fetch it
   chip.register(registry, Actor1, actor)
-  let assert Ok(_) = chip.find(registry, Actor1)
+  chip.register(registry, Actor2, actor)
 
-  // Unregister the process and try to fetch
+  let assert Ok(_) = chip.find(registry, Actor1)
+  let assert Ok(_) = chip.find(registry, Actor2)
+  let assert Error(_) = chip.find(registry, Actor3)
+
+  // Unregister a process and try to fetch
   chip.unregister(registry, Actor1)
   let assert Error(chip.NotFound) = chip.find(registry, Actor1)
-
-  // Try to fetch unrelated names
-  let assert Error(chip.NotFound) = chip.find(registry, Actor2)
+  let assert Ok(_) = chip.find(registry, Actor2)
   let assert Error(chip.NotFound) = chip.find(registry, Actor3)
 }
 

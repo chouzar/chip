@@ -22,8 +22,9 @@
 //// let assert Error(chip.NotFound) = chip.find(registry, B)
 //// ```
 
+import gleam/list
 import gleam/map.{Map}
-import gleam/erlang/process.{ProcessDown, ProcessMonitor, Subject}
+import gleam/erlang/process.{ProcessDown, ProcessMonitor, Selector, Subject}
 import gleam/otp/actor.{StartError}
 
 /// These are the possible messages that our registry can handle, this is an opaque
@@ -109,11 +110,10 @@ fn handle_message(
       let state = map.insert(state, name, Record(subject, monitor))
 
       // When a process down message is received map it to an unregister message
-      let handle_down = fn(_down: ProcessDown) { Unregister(name) }
-
       let handle_process_down =
-        process.new_selector()
-        |> process.selecting_process_down(monitor, handle_down)
+        state
+        |> map.to_list()
+        |> list.fold(process.new_selector(), build_handle_down)
 
       // Continue with handle down selector
       actor.continue(state)
@@ -148,4 +148,15 @@ fn handle_message(
       }
     }
   }
+}
+
+fn build_handle_down(
+  selector: Selector(Message(name, subject_message)),
+  name_record: #(name, Record(message)),
+) {
+  let name = name_record.0
+  let Record(_subject, monitor) = name_record.1
+
+  let handle_down = fn(_down: ProcessDown) { Unregister(name) }
+  process.selecting_process_down(selector, monitor, handle_down)
 }
