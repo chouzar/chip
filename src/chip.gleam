@@ -106,6 +106,7 @@ fn handle_message(
         |> process.monitor_process()
 
       // TODO: temporarily stored internally here.
+      // TODO: adding double monitors when registering same process.
       // Eventually dispatch to a store (GenServer, ets, DB)
       let state = map.insert(state, name, Record(subject, monitor))
 
