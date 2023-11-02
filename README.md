@@ -6,7 +6,7 @@
 A pure gleam process registry that plays along types and gleam OTP abstractions.
 Will automatically delist dead processes. 
 
-## Example
+### Example
 
 ```gleam
 import gleam/erlang/process
@@ -27,9 +27,17 @@ let assert Ok(subject) = chip.find(registry, A)
 let assert Error(chip.NotFound) = chip.find(registry, B)
 ```
 
-Feature-wise its still very basic but planning to integrate helpers
-for supervisors that restar processes and a way to lookup name groups for
-dynamic dispatch.
+Feature-wise its still very basic but planning to integrate: 
+
+* `via` helper to initialize processes through the registry
+* Being able to manage process groups.
+* Dynamic dispatch helpers for pub-sub behaviour.
+
+Other features which are out of scope at this stage: 
+
+* Match-spec lookup.
+* Multi-node distribution.
+* General performance (ets, partitions, multi-process dispatch, efficient lookups).
 
 ## Installation
 
