@@ -49,6 +49,25 @@ pub fn find_test() {
   let assert Error(chip.NotFound) = chip.find(registry, Actor3)
 }
 
+pub fn delist_dead_process_test() {
+  // Initialize actor and registry
+  let assert Ok(actor) = actor_mock()
+  let assert Ok(registry) = chip.start()
+
+  // Register the process and try to fetch it
+  chip.register(registry, Actor1, actor)
+  chip.register(registry, Actor3, actor)
+
+  let assert Ok(_) = chip.find(registry, Actor1)
+  let assert Ok(_) = chip.find(registry, Actor3)
+
+  // Kill process and try to fetch it
+  let assert Ok(_) = process.call(actor, fn(self) { Stop(self) }, 10)
+
+  let assert Error(_) = chip.find(registry, Actor1)
+  let assert Error(_) = chip.find(registry, Actor3)
+}
+
 pub opaque type MockMessage(message) {
   Stop(client: process.Subject(message))
 }
