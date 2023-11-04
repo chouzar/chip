@@ -18,8 +18,8 @@ pub fn start_test() {
 }
 
 pub fn register_test() {
-  // Initialize the Registry and register the actor under a name
   let assert Ok(registry) = chip.start()
+
   let assert Nil = chip.register(registry, Actor1, process.new_subject())
 }
 
@@ -68,19 +68,60 @@ pub fn delist_dead_process_test() {
   let assert Error(_) = chip.find(registry, Actor3)
 }
 
-pub opaque type MockMessage(message) {
-  Stop(client: process.Subject(message))
+type CounterMessage(subject_message) {
+  Inc
+  Current(client: process.Subject(subject_message))
+  Stop(client: process.Subject(subject_message))
 }
 
-fn actor_mock() {
-  let handle_message = fn(message, _state) {
-    case message {
-      Stop(client) -> {
-        process.send(client, Ok(Nil))
-        actor.Stop(process.Normal)
-      }
+type State(message) {
+  Init(register: Subject(message), count: Int)
+  Count(Int)
+}
+
+fn handle_count(message: CounterMessage(subject_message), state: State) {
+  case state, message {
+    Init(register, count), _message -> {
+      chip.register(
+    }
+    
+    Count(count), Inc -> {
+      
     }
   }
+  
+  case message {
+    Inc -> {
+      actor.continue(count + 1)
+    }
 
-  actor.start(Nil, handle_message)
+    Current(client) -> {
+      process.send(client, count)
+      actor.continue(count)
+    }
+
+    Stop(client) -> {
+      process.send(client, Ok(Nil))
+      actor.Stop(process.Normal)
+    }
+  }
+}
+
+pub fn counter_test() {
+  let assert Ok(counter_a) = actor.start(0, handle_count)
+  let assert Ok(counter_b) = actor.start(100, handle_count)
+
+  let assert Ok(registry) = chip.start()
+  chip.register(registry, "SmolCount", counter_a)
+  chip.register(registry, "BigoCount", counter_b)
+  // Meanwhile in another scope of your app...
+
+  let assert Ok(counter_y) = chip.find(registry, "BigoCount")
+  process.send(counter_y, Inc)
+  process.send(counter_y, Inc)
+  process.send(counter_y, Inc)
+
+  let count = process.call(counter_y, fn(self) { Current(self) }, 10)
+
+  let assert 103 = count
 }

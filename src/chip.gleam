@@ -30,6 +30,7 @@ import gleam/otp/actor.{StartError}
 /// These are the possible messages that our registry can handle, this is an opaque
 /// type so you would use these commands through the equivalent functions.
 pub opaque type Message(name, message) {
+  Register(subject: Subject(message))
   Register(name: name, subject: Subject(message))
   Unregister(name: name)
   Find(client: Subject(Result(Subject(message), Errors)), name: name)
@@ -65,8 +66,8 @@ pub fn start() -> Result(Subject(Message(name, message)), StartError) {
 /// > chip.register(registry, "MyProcess", process.new_subject())
 /// Nil
 /// ```
-pub fn register(registry, name: name, subject: Subject(message)) -> Nil {
-  process.send(registry, Register(name, subject))
+pub fn register(registry, subject: Subject(message)) -> Nil {
+  process.send(registry, Register(subject))
 }
 
 /// Manually unregister a `Subject` within the registry.
