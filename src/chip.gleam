@@ -12,11 +12,13 @@ pub opaque type Action(name, message) {
   RegisterAs(subject: Subject(message), name: name)
   Deregister(name: name)
   Demonitor(subject: Subject(message))
+  RebuildSelector
   Stop(client: Subject(process.ExitReason))
 }
 
 type State(message, name) {
   State(
+    self: Subject(Action(name, message)),
     group: Map(Subject(message), ProcessMonitor),
     named: Map(name, Set(Subject(message))),
     selector: Selector(Action(name, message)),
@@ -109,18 +111,21 @@ fn handle_message(message: Action(name, message), state: State(message, name)) {
     }
 
     Deregister(name) -> {
-      let state =
-        state
-        |> delete_named(name)
+      let state = delete_named(state, name)
+      process.send(state.self, RebuildSelector)
 
       actor.continue(state)
-      |> actor.with_selector(state.selector)
     }
 
     Demonitor(subject) -> {
-      let state =
-        state
-        |> demonitor_subject(subject)
+      let state = demonitor_subject(state, subject)
+      process.send(state.self, RebuildSelector)
+
+      actor.continue(state)
+    }
+
+    RebuildSelector -> {
+      let state = rebuild_process_down_selectors(state)
 
       actor.continue(state)
       |> actor.with_selector(state.selector)
@@ -132,6 +137,24 @@ fn handle_message(message: Action(name, message), state: State(message, name)) {
       actor.Stop(process.Normal)
     }
   }
+}
+
+fn rebuild_process_down_selectors(
+  state: State(message, name),
+) -> State(message, name) {
+  let subjects_info = map.to_list(state.group)
+
+  let selector =
+    list.fold(
+      subjects_info,
+      process.new_selector(),
+      fn(selector, subject_info) {
+        let #(subject, monitor) = subject_info
+        capture_process_down(selector, monitor, subject)
+      },
+    )
+
+  State(..state, selector: selector)
 }
 
 fn insert(
