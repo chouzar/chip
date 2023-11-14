@@ -87,24 +87,14 @@ fn handle_message(message: Action(name, message), state: State(message, name)) {
     }
 
     Register(subject) -> {
-      let monitor =
-        subject
-        |> process.subject_owner()
-        |> process.monitor_process()
-
-      let state = insert(state, subject, monitor)
+      let state = insert(state, subject)
 
       actor.continue(state)
       |> actor.with_selector(state.selector)
     }
 
     RegisterAs(subject, name) -> {
-      let monitor =
-        subject
-        |> process.subject_owner()
-        |> process.monitor_process()
-
-      let state = insert_as(state, subject, monitor, name)
+      let state = insert_as(state, subject, name)
 
       actor.continue(state)
       |> actor.with_selector(state.selector)
@@ -160,8 +150,11 @@ fn rebuild_process_down_selectors(
 fn insert(
   state: State(message, name),
   subject: Subject(message),
-  monitor: ProcessMonitor,
 ) -> State(message, name) {
+  let monitor =
+    subject
+    |> process.subject_owner()
+    |> process.monitor_process()
   let group = map.insert(state.group, subject, monitor)
   let selector = capture_process_down(state.selector, monitor, subject)
 
@@ -171,7 +164,6 @@ fn insert(
 fn insert_as(
   state: State(message, name),
   subject: Subject(message),
-  monitor: ProcessMonitor,
   name: name,
 ) -> State(message, name) {
   let subjects =
@@ -182,7 +174,7 @@ fn insert_as(
   let named = map.insert(state.named, name, subjects)
 
   State(..state, named: named)
-  |> insert(subject, monitor)
+  |> insert(subject)
 }
 
 fn delete_named(state: State(message, name), name: name) -> State(message, name) {
@@ -212,7 +204,6 @@ fn delete_named(state: State(message, name), name: name) -> State(message, name)
   list.each(monitors, process.demonitor_process)
 
   let group = map.drop(state.group, subjects_to_delete)
-
   let named = map.delete(state.named, name)
   State(..state, group: group, named: named)
 }
@@ -226,16 +217,9 @@ fn demonitor_subject(
       process.demonitor_process(monitor)
 
       let group = map.delete(state.group, subject)
-
-      let named =
-        map.map_values(
-          state.named,
-          fn(_name, subjects) { set.delete(subjects, subject) },
-        )
-
-      let state = State(..state, group: group, named: named)
-
-      state
+      let delete = fn(_name, subjects) { set.delete(subjects, subject) }
+      let named = map.map_values(state.named, delete)
+      State(..state, group: group, named: named)
     }
 
     Error(Nil) -> state
