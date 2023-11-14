@@ -106,6 +106,7 @@ pub fn deregister_test() {
 
   // Deregistering Group B removes counter 3 but not 2 or 4  
   chip.deregister(registry, GroupB)
+  process.sleep(10)
   let assert [_, _, _, _] = chip.all(registry)
   let assert [_] = chip.lookup(registry, GroupA)
   let assert [] = chip.lookup(registry, GroupB)
@@ -113,7 +114,7 @@ pub fn deregister_test() {
 
   // Deregistering Group A removes counter 2
   chip.deregister(registry, GroupA)
-  let assert [_, _, _] = chip.all(registry)
+  process.sleep(10)
   let assert [_, _, _] = chip.all(registry)
   let assert [] = chip.lookup(registry, GroupA)
   let assert [] = chip.lookup(registry, GroupB)
@@ -121,6 +122,7 @@ pub fn deregister_test() {
 
   // Deregistering Group C removes counter 4
   chip.deregister(registry, GroupC)
+  process.sleep(10)
   let assert [_, _] = chip.all(registry)
   let assert [] = chip.lookup(registry, GroupA)
   let assert [] = chip.lookup(registry, GroupB)
@@ -155,6 +157,7 @@ pub fn demonitor_test() {
 
   // Stopping counter 3 removes it from the group and B subgroup
   let assert 1000 = stop_counter(counter_3)
+  process.sleep(10)
   let assert [_, _, _, _] = chip.all(registry)
   let assert [_] = chip.lookup(registry, GroupA)
   let assert [_, _] = chip.lookup(registry, GroupB)
@@ -162,6 +165,7 @@ pub fn demonitor_test() {
 
   // Stopping counter 2 removes it from the group and A, B subgroup 
   let assert 100 = stop_counter(counter_2)
+  process.sleep(10)
   let assert [_, _, _] = chip.all(registry)
   let assert [] = chip.lookup(registry, GroupA)
   let assert [_] = chip.lookup(registry, GroupB)
@@ -169,6 +173,7 @@ pub fn demonitor_test() {
 
   // Stopping counter 4 removes it from the group and B, C subgroup
   let assert 10_000 = stop_counter(counter_4)
+  process.sleep(10)
   let assert [_, _] = chip.all(registry)
   let assert [] = chip.lookup(registry, GroupA)
   let assert [] = chip.lookup(registry, GroupB)
