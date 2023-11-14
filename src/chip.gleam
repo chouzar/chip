@@ -26,6 +26,11 @@ type State(message, name) {
 }
 
 pub fn start() -> Result(Subject(Action(name, message)), actor.StartError) {
+  actor.start_spec(actor.Spec(
+    init: handle_init,
+    init_timeout: 10,
+    loop: handle_message,
+  ))
 }
 
 pub fn all(registry: Subject(Action(name, message))) -> List(Subject(message)) {
@@ -64,6 +69,15 @@ pub fn deregister(registry: Subject(Action(name, message)), name: name) -> Nil {
 
 pub fn stop(registry: Subject(Action(name, message))) -> process.ExitReason {
   process.call(registry, Stop(_), 10)
+}
+
+fn handle_init() -> actor.InitResult(
+  State(message, name),
+  Action(name, message),
+) {
+  let selector = process.new_selector()
+  let state = State(process.new_subject(), map.new(), map.new(), selector)
+  actor.Ready(state: state, selector: selector)
 }
 
 fn handle_message(message: Action(name, message), state: State(message, name)) {
