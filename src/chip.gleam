@@ -1,3 +1,9 @@
+////Chip is a gleam process registry that plays along gleam erlang/OTP `Subject` type. 
+////
+////It lets us group subjects of the same type so that we can later reference them all 
+////as a group, or sub-group if we decide to name them. Will also automatically delist 
+////dead processes.
+
 import gleam/list
 import gleam/map.{Map}
 import gleam/set.{Set}
@@ -28,6 +34,14 @@ type State(name, message) {
   )
 }
 
+/// Starts the registry.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chip.start()
+/// Ok(registry)
+/// ```
 pub fn start() -> Result(Subject(Action(name, message)), actor.StartError) {
   actor.start_spec(actor.Spec(
     init: handle_init,
@@ -36,10 +50,26 @@ pub fn start() -> Result(Subject(Action(name, message)), actor.StartError) {
   ))
 }
 
+/// Returns all registered `Subject`s.
+/// 
+/// ### Example
+/// 
+/// ```gleam
+/// > chip.all(registry) 
+/// [subject_a, subject_b, subject_c]
+/// ```
 pub fn all(registry: Subject(Action(name, message))) -> List(Subject(message)) {
   process.call(registry, All(_), 100)
 }
 
+/// Looks up named subgroup of `Subject`s.
+/// 
+/// ### Example
+/// 
+/// ```gleam
+/// > chip.lookup(registry, "MySubjects") 
+/// [subject_a, subject_c]
+/// ```
 pub fn lookup(
   registry: Subject(Action(name, message)),
   name: name,
@@ -47,6 +77,14 @@ pub fn lookup(
   process.call(registry, Lookup(_, name), 100)
 }
 
+/// Manually registers a `Subject`. 
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chip.register(registry, fn() { start_my_subject() })
+/// Ok(registered_subject)
+/// ```
 pub fn register(
   registry: Subject(Action(name, message)),
   start: fn() -> Result(Subject(message), actor.StartError),
@@ -56,6 +94,14 @@ pub fn register(
   Ok(subject)
 }
 
+/// Manually registers a `Subject` under a named group. 
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chip.register(registry, "MySubjects", fn() { start_my_subject() })
+/// Ok(registered_subject)
+/// ```
 pub fn register_as(
   registry: Subject(Action(name, message)),
   name: name,
@@ -66,10 +112,26 @@ pub fn register_as(
   Ok(subject)
 }
 
+/// Manually deregister a named group of `Subject`s.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chip.deregister(registry, "MySubjects")
+/// Nil
+/// ```
 pub fn deregister(registry: Subject(Action(name, message)), name: name) -> Nil {
   process.send(registry, Deregister(name))
 }
 
+/// Stops the registry, all grouped `Subject`s will be gone.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chip.stop(registry)
+/// Normal
+/// ```
 pub fn stop(registry: Subject(Action(name, message))) -> process.ExitReason {
   process.call(registry, Stop(_), 10)
 }

@@ -3,48 +3,119 @@
 [![Package Version](https://img.shields.io/hexpm/v/chip)](https://hex.pm/packages/chip)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
-A pure gleam process registry that plays along types and gleam OTP abstractions.
-Will automatically delist dead processes. 
+
+Chip is a gleam process registry that plays along gleam erlang/OTP `Subject` type. 
+
+It lets us group subjects of the same type so that we can later reference them all 
+as a group, or sub-group if we decide to name them. Will also automatically delist 
+dead processes.
 
 ### Example
 
+Lets assemble the pieces to build a simple counter actor:
+
+```gleam
+pub type CounterMessage {
+  Inc
+  Current(client: process.Subject(Int))
+  Stop(client: process.Subject(Int))
+}
+
+fn handle_count(message: CounterMessage, count: Int) {
+  case message {
+    Inc -> {
+      actor.continue(count + 1)
+    }
+
+    Current(client) -> {
+      process.send(client, count)
+      actor.continue(count)
+    }
+
+    Stop(client) -> {
+      process.send(client, count)
+      actor.Stop(process.Normal)
+    }
+  }
+}
+```
+
+We start our registry and create new instances of a counter:
 ```gleam
 import gleam/erlang/process
 import chip
 
-// Names can be built out of any primitive or even types.
-type Name {
-  A
-  B
+pub fn main() {
+  let assert Ok(registry) = chip.start()
+
+  chip.register(registry, fn() { 
+    actor.start(1, handle_count)
+  })
+  
+  chip.register(registry, fn() { 
+    actor.start(2, handle_count)
+  })
+  
+  chip.register(registry, fn() { 
+    actor.start(3, handle_count)
+  })
 }
-
-// We can start the registry and register a new subject 
-let assert Ok(registry) = chip.start()
-chip.register(registry, A, process.new_subject())
-
-// If we lose scope of our processes, just look it up in the registry!
-let assert Ok(subject) = chip.find(registry, A)
-let assert Error(chip.NotFound) = chip.find(registry, B)
 ```
 
-Feature-wise its still very basic but planning to integrate: 
+Then retrieve all registered subjects so we can send messages:
+```gleam
+chip.all(registry) 
+|> list.each(process.send(_, Inc))
 
-* `via` helper to initialize processes through the registry
-* Being able to manage process groups.
-* Dynamic dispatch helpers for pub-sub behaviour.
+let assert [2, 3, 4] =  
+  chip.all(registry)
+  |> list.map(process.call(_, Current(_), 10))
+  |> list.sort(int.compare)
+```
 
-Other features which are out of scope at this stage: 
+It is also possible to register a subject under a named subgroup: 
+```gleam
+import gleam/erlang/process
+import chip
 
-* Match-spec lookup.
-* Multi-node distribution.
-* General performance (ets, partitions, multi-process dispatch, efficient lookups).
+type Group {
+  GroupA 
+  GroupB 
+}
+
+pub fn main() {
+  let assert Ok(registry) = chip.start()
+
+  chip.register_as(registry, GroupA, fn() { 
+    actor.start(1, handle_count)
+  })
+  
+  chip.register(registry, GroupB, fn() { 
+    actor.start(2, handle_count)
+  })
+  
+  chip.register(registry, GroupA, fn() { 
+    actor.start(3, handle_count)
+  })
+}
+```
+
+Then lookup for specific names under the group:
+```gleam
+let assert [1, 3] = 
+  chip.lookup(registry, GroupA) 
+  |> list.map(process.call(_, Current(_), 10))
+  |> list.sort(int.compare)
+```
+
+Feature-wise this is near beign complete. Still planning to integrate: 
+
+* A `via` helper to initialize processes explicitly, currently `register` and `register_as`).
+* A `register` helper to implicitly initialize subjects.
+* Pending to document guides and use-cases.
 
 ## Installation
-
-You can If available on Hex this package can be added to your Gleam project:
 
 ```sh
 gleam add chip
 ```
-
-and its documentation can be found at <https://hexdocs.pm/chip>.
