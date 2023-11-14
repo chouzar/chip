@@ -16,4 +16,3 @@ gleam_stdlib = "~> 0.31"
 gleeunit = "~> 0.10"
 gleam_erlang = "~> 0.22"
 gleam_otp = "~> 0.7"
-
