@@ -1,9 +1,9 @@
 import gleam/list
 import gleam/map.{Map}
 import gleam/set.{Set}
-import gleam/result
+import gleam/result.{try}
 import gleam/erlang/process.{ProcessDown, ProcessMonitor, Selector, Subject}
-import gleam/otp/actor.{StartError}
+import gleam/otp/actor
 
 pub opaque type Action(name, message) {
   All(client: Subject(List(Subject(message))))
@@ -23,11 +23,7 @@ type State(message, name) {
   )
 }
 
-pub fn start() -> Result(Subject(Action(name, message)), StartError) {
-  actor.start(
-    State(map.new(), map.new(), process.new_selector()),
-    handle_message,
-  )
+pub fn start() -> Result(Subject(Action(name, message)), actor.StartError) {
 }
 
 pub fn all(registry: Subject(Action(name, message))) -> List(Subject(message)) {
@@ -43,9 +39,9 @@ pub fn lookup(
 
 pub fn register(
   registry: Subject(Action(name, message)),
-  start: fn() -> Result(Subject(message), StartError),
-) -> Result(Subject(message), StartError) {
-  use subject <- result.try(start())
+  start: fn() -> Result(Subject(message), actor.StartError),
+) -> Result(Subject(message), actor.StartError) {
+  use subject <- try(start())
   process.send(registry, Register(subject))
   Ok(subject)
 }
@@ -53,9 +49,9 @@ pub fn register(
 pub fn register_as(
   registry: Subject(Action(name, message)),
   name: name,
-  start: fn() -> Result(Subject(message), StartError),
-) -> Result(Subject(message), StartError) {
-  use subject <- result.try(start())
+  start: fn() -> Result(Subject(message), actor.StartError),
+) -> Result(Subject(message), actor.StartError) {
+  use subject <- try(start())
   process.send(registry, RegisterAs(subject, name))
   Ok(subject)
 }
