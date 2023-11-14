@@ -2,7 +2,9 @@ import gleam/list
 import gleam/map.{Map}
 import gleam/set.{Set}
 import gleam/result.{try}
-import gleam/erlang/process.{ProcessDown, ProcessMonitor, Selector, Subject}
+import gleam/function.{identity}
+import gleam/erlang/process.{Pid,
+  ProcessDown, ProcessMonitor, Selector, Subject}
 import gleam/otp/actor
 
 pub opaque type Action(name, message) {
@@ -16,10 +18,11 @@ pub opaque type Action(name, message) {
   Stop(client: Subject(process.ExitReason))
 }
 
-type State(message, name) {
+type State(name, message) {
   State(
     self: Subject(Action(name, message)),
-    group: Map(Subject(message), ProcessMonitor),
+    index: Map(Pid, ProcessMonitor),
+    group: Set(Subject(message)),
     named: Map(name, Set(Subject(message))),
     selector: Selector(Action(name, message)),
   )
@@ -72,18 +75,31 @@ pub fn stop(registry: Subject(Action(name, message))) -> process.ExitReason {
 }
 
 fn handle_init() -> actor.InitResult(
-  State(message, name),
+  State(name, message),
   Action(name, message),
 ) {
-  let selector = process.new_selector()
-  let state = State(process.new_subject(), map.new(), map.new(), selector)
-  actor.Ready(state: state, selector: selector)
+  let subject = process.new_subject()
+
+  let selector =
+    process.new_selector()
+    |> process.selecting(subject, identity)
+
+  let state =
+    State(
+      self: subject,
+      index: map.new(),
+      group: set.new(),
+      named: map.new(),
+      selector: selector,
+    )
+
+  actor.Ready(state, selector)
 }
 
-fn handle_message(message: Action(name, message), state: State(message, name)) {
+fn handle_message(message: Action(name, message), state: State(name, message)) {
   case message {
     All(client) -> {
-      let subjects = map.keys(state.group)
+      let subjects = set.to_list(state.group)
       process.send(client, subjects)
 
       actor.continue(state)
@@ -91,10 +107,8 @@ fn handle_message(message: Action(name, message), state: State(message, name)) {
 
     Lookup(client, name) -> {
       let subjects =
-        state.named
-        |> get_name(name)
+        get_group(state.named, name)
         |> set.to_list()
-
       process.send(client, subjects)
 
       actor.continue(state)
@@ -143,46 +157,40 @@ fn handle_message(message: Action(name, message), state: State(message, name)) {
   }
 }
 
-fn rebuild_process_down_selectors(
-  state: State(message, name),
-) -> State(message, name) {
-  let subjects_info = map.to_list(state.group)
-
-  let selector =
-    list.fold(
-      subjects_info,
-      process.new_selector(),
-      fn(selector, subject_info) {
-        let #(subject, monitor) = subject_info
-        capture_process_down(selector, monitor, subject)
-      },
-    )
-
-  State(..state, selector: selector)
-}
-
 fn insert(
-  state: State(message, name),
+  state: State(name, message),
   subject: Subject(message),
-) -> State(message, name) {
-  let monitor =
-    subject
-    |> process.subject_owner()
-    |> process.monitor_process()
-  let group = map.insert(state.group, subject, monitor)
-  let selector = capture_process_down(state.selector, monitor, subject)
+) -> State(name, message) {
+  let pid = process.subject_owner(subject)
 
-  State(..state, group: group, selector: selector)
+  case map.get(state.index, pid) {
+    Ok(monitor) -> {
+      let group = set.insert(state.group, subject)
+      let selector = receive_process_down(state.selector, monitor, subject)
+
+      State(..state, group: group, selector: selector)
+    }
+
+    Error(Nil) -> {
+      let monitor = process.monitor_process(pid)
+
+      let index = map.insert(state.index, pid, monitor)
+      let group = set.insert(state.group, subject)
+      let selector = receive_process_down(state.selector, monitor, subject)
+
+      State(..state, index: index, group: group, selector: selector)
+    }
+  }
 }
 
 fn insert_as(
-  state: State(message, name),
+  state: State(name, message),
   subject: Subject(message),
   name: name,
-) -> State(message, name) {
+) -> State(name, message) {
   let subjects =
     state.named
-    |> get_name(name)
+    |> get_group(name)
     |> set.insert(subject)
 
   let named = map.insert(state.named, name, subjects)
@@ -191,7 +199,7 @@ fn insert_as(
   |> insert(subject)
 }
 
-fn delete_named(state: State(message, name), name: name) -> State(message, name) {
+fn delete_named(state: State(name, message), name: name) -> State(name, message) {
   let other_named = map.delete(state.named, name)
   let other_subjects =
     map.fold(
@@ -200,7 +208,7 @@ fn delete_named(state: State(message, name), name: name) -> State(message, name)
       fn(all_subjects, _name, subjects) { set.union(all_subjects, subjects) },
     )
 
-  let subjects = get_name(state.named, name)
+  let subjects = get_group(state.named, name)
 
   let subjects_to_keep =
     set.intersection(subjects, other_subjects)
@@ -210,37 +218,46 @@ fn delete_named(state: State(message, name), name: name) -> State(message, name)
     set.drop(subjects, subjects_to_keep)
     |> set.to_list()
 
+  let pids_to_delete =
+    subjects_to_delete
+    |> list.map(fn(subject) { process.subject_owner(subject) })
+
   let monitors =
-    state.group
-    |> map.take(subjects_to_delete)
+    state.index
+    |> map.take(pids_to_delete)
     |> map.values()
 
   list.each(monitors, process.demonitor_process)
 
-  let group = map.drop(state.group, subjects_to_delete)
+  let index = map.drop(state.index, pids_to_delete)
+  let group = set.drop(state.group, subjects_to_delete)
   let named = map.delete(state.named, name)
-  State(..state, group: group, named: named)
+  State(..state, index: index, group: group, named: named)
 }
 
 fn demonitor_subject(
-  state: State(message, name),
+  state: State(name, message),
   subject: Subject(message),
-) -> State(message, name) {
-  case map.get(state.group, subject) {
+) -> State(name, message) {
+  let pid = process.subject_owner(subject)
+
+  case map.get(state.index, pid) {
     Ok(monitor) -> {
       process.demonitor_process(monitor)
 
-      let group = map.delete(state.group, subject)
+      let index = map.delete(state.index, pid)
+      let group = set.delete(state.group, subject)
       let delete = fn(_name, subjects) { set.delete(subjects, subject) }
       let named = map.map_values(state.named, delete)
-      State(..state, group: group, named: named)
+
+      State(..state, index: index, group: group, named: named)
     }
 
     Error(Nil) -> state
   }
 }
 
-fn get_name(
+fn get_group(
   named: Map(name, Set(Subject(message))),
   name: name,
 ) -> Set(Subject(message)) {
@@ -250,7 +267,32 @@ fn get_name(
   }
 }
 
-fn capture_process_down(
+fn rebuild_process_down_selectors(
+  state: State(name, message),
+) -> State(name, message) {
+  let self = process.new_subject()
+
+  let subjects = set.to_list(state.group)
+
+  let selector =
+    process.new_selector()
+    |> process.selecting(self, identity)
+    |> list.fold(
+      subjects,
+      _,
+      fn(selector, subject) {
+        let pid = process.subject_owner(subject)
+        case map.get(state.index, pid) {
+          Ok(monitor) -> receive_process_down(selector, monitor, subject)
+          Error(Nil) -> selector
+        }
+      },
+    )
+
+  State(..state, self: self, selector: selector)
+}
+
+fn receive_process_down(
   selector: Selector(Action(name, message)),
   monitor: ProcessMonitor,
   subject: Subject(message),
