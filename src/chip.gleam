@@ -5,12 +5,13 @@
 ////dead processes.
 
 import gleam/list
-import gleam/map.{Map}
-import gleam/set.{Set}
+import gleam/map.{type Map}
+import gleam/set.{type Set}
 import gleam/result.{try}
 import gleam/function.{identity}
-import gleam/erlang/process.{Pid,
-  ProcessDown, ProcessMonitor, Selector, Subject}
+import gleam/erlang/process.{
+  type Pid, type ProcessDown, type ProcessMonitor, type Selector, type Subject,
+}
 import gleam/otp/actor
 
 pub opaque type Action(name, message) {
