@@ -12,6 +12,7 @@ import gleam/function.{identity}
 import gleam/erlang/process.{Pid,
   ProcessDown, ProcessMonitor, Selector, Subject}
 import gleam/otp/actor
+import gleam/io
 
 pub opaque type Action(name, message) {
   All(client: Subject(List(Subject(message))))
@@ -77,7 +78,7 @@ pub fn lookup(
   process.call(registry, Lookup(_, name), 100)
 }
 
-/// Manually registers a `Subject`. 
+/// Registers current process. 
 /// 
 /// ## Example
 /// 
@@ -85,13 +86,10 @@ pub fn lookup(
 /// > chip.register(registry, fn() { start_my_subject() })
 /// Ok(registered_subject)
 /// ```
-pub fn register(
-  registry: Subject(Action(name, message)),
-  start: fn() -> Result(Subject(message), actor.StartError),
-) -> Result(Subject(message), actor.StartError) {
-  use subject <- try(start())
-  process.send(registry, Register(subject))
-  Ok(subject)
+pub fn register(registry: Subject(Action(name, message))) -> Subject(message) {
+  let self = process.new_subject()
+  process.send(registry, Register(self))
+  self
 }
 
 /// Manually registers a `Subject` under a named group. 
