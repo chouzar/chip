@@ -5,7 +5,7 @@
 ////dead processes.
 
 import gleam/list
-import gleam/map.{type Map}
+import gleam/dict.{type Dict}
 import gleam/set.{type Set}
 import gleam/result.{try}
 import gleam/function.{identity}
@@ -28,9 +28,9 @@ pub opaque type Action(name, message) {
 type State(name, message) {
   State(
     self: Subject(Action(name, message)),
-    index: Map(Pid, ProcessMonitor),
+    index: Dict(Pid, ProcessMonitor),
     group: Set(Subject(message)),
-    named: Map(name, Set(Subject(message))),
+    named: Dict(name, Set(Subject(message))),
     selector: Selector(Action(name, message)),
   )
 }
@@ -150,9 +150,9 @@ fn handle_init() -> actor.InitResult(
   let state =
     State(
       self: subject,
-      index: map.new(),
+      index: dict.new(),
       group: set.new(),
-      named: map.new(),
+      named: dict.new(),
       selector: selector,
     )
 
@@ -226,7 +226,7 @@ fn insert(
 ) -> State(name, message) {
   let pid = process.subject_owner(subject)
 
-  case map.get(state.index, pid) {
+  case dict.get(state.index, pid) {
     Ok(monitor) -> {
       let group = set.insert(state.group, subject)
       let selector = receive_process_down(state.selector, monitor, subject)
@@ -237,7 +237,7 @@ fn insert(
     Error(Nil) -> {
       let monitor = process.monitor_process(pid)
 
-      let index = map.insert(state.index, pid, monitor)
+      let index = dict.insert(state.index, pid, monitor)
       let group = set.insert(state.group, subject)
       let selector = receive_process_down(state.selector, monitor, subject)
 
@@ -256,16 +256,16 @@ fn insert_as(
     |> get_group(name)
     |> set.insert(subject)
 
-  let named = map.insert(state.named, name, subjects)
+  let named = dict.insert(state.named, name, subjects)
 
   State(..state, named: named)
   |> insert(subject)
 }
 
 fn delete_named(state: State(name, message), name: name) -> State(name, message) {
-  let other_named = map.delete(state.named, name)
+  let other_named = dict.delete(state.named, name)
   let other_subjects =
-    map.fold(
+    dict.fold(
       other_named,
       set.new(),
       fn(all_subjects, _name, subjects) { set.union(all_subjects, subjects) },
@@ -287,14 +287,14 @@ fn delete_named(state: State(name, message), name: name) -> State(name, message)
 
   let monitors =
     state.index
-    |> map.take(pids_to_delete)
-    |> map.values()
+    |> dict.take(pids_to_delete)
+    |> dict.values()
 
   list.each(monitors, process.demonitor_process)
 
-  let index = map.drop(state.index, pids_to_delete)
+  let index = dict.drop(state.index, pids_to_delete)
   let group = set.drop(state.group, subjects_to_delete)
-  let named = map.delete(state.named, name)
+  let named = dict.delete(state.named, name)
   State(..state, index: index, group: group, named: named)
 }
 
@@ -304,14 +304,14 @@ fn demonitor_subject(
 ) -> State(name, message) {
   let pid = process.subject_owner(subject)
 
-  case map.get(state.index, pid) {
+  case dict.get(state.index, pid) {
     Ok(monitor) -> {
       process.demonitor_process(monitor)
 
-      let index = map.delete(state.index, pid)
+      let index = dict.delete(state.index, pid)
       let group = set.delete(state.group, subject)
       let delete = fn(_name, subjects) { set.delete(subjects, subject) }
-      let named = map.map_values(state.named, delete)
+      let named = dict.map_values(state.named, delete)
 
       State(..state, index: index, group: group, named: named)
     }
@@ -321,10 +321,10 @@ fn demonitor_subject(
 }
 
 fn get_group(
-  named: Map(name, Set(Subject(message))),
+  named: Dict(name, Set(Subject(message))),
   name: name,
 ) -> Set(Subject(message)) {
-  case map.get(named, name) {
+  case dict.get(named, name) {
     Ok(subjects) -> subjects
     Error(Nil) -> set.new()
   }
@@ -345,7 +345,7 @@ fn rebuild_process_down_selectors(
       _,
       fn(selector, subject) {
         let pid = process.subject_owner(subject)
-        case map.get(state.index, pid) {
+        case dict.get(state.index, pid) {
           Ok(monitor) -> receive_process_down(selector, monitor, subject)
           Error(Nil) -> selector
         }
