@@ -14,7 +14,7 @@ import gleam/erlang/process.{
 }
 import gleam/otp/actor
 
-pub opaque type Action(name, message) {
+pub opaque type Message(name, message) {
   All(client: Subject(List(Subject(message))))
   Lookup(client: Subject(List(Subject(message))), name: name)
   Register(subject: Subject(message))
@@ -27,11 +27,11 @@ pub opaque type Action(name, message) {
 
 type State(name, message) {
   State(
-    self: Subject(Action(name, message)),
+    self: Subject(Message(name, message)),
     index: Dict(Pid, ProcessMonitor),
     group: Set(Subject(message)),
     named: Dict(name, Set(Subject(message))),
-    selector: Selector(Action(name, message)),
+    selector: Selector(Message(name, message)),
   )
 }
 
@@ -43,7 +43,7 @@ type State(name, message) {
 /// > chip.start()
 /// Ok(registry)
 /// ```
-pub fn start() -> Result(Subject(Action(name, message)), actor.StartError) {
+pub fn start() -> Result(Subject(Message(name, message)), actor.StartError) {
   actor.start_spec(actor.Spec(
     init: handle_init,
     init_timeout: 10,
@@ -59,7 +59,7 @@ pub fn start() -> Result(Subject(Action(name, message)), actor.StartError) {
 /// > chip.all(registry) 
 /// [subject_a, subject_b, subject_c]
 /// ```
-pub fn all(registry: Subject(Action(name, message))) -> List(Subject(message)) {
+pub fn all(registry: Subject(Message(name, message))) -> List(Subject(message)) {
   process.call(registry, All(_), 100)
 }
 
@@ -72,7 +72,7 @@ pub fn all(registry: Subject(Action(name, message))) -> List(Subject(message)) {
 /// [subject_a, subject_c]
 /// ```
 pub fn lookup(
-  registry: Subject(Action(name, message)),
+  registry: Subject(Message(name, message)),
   name: name,
 ) -> List(Subject(message)) {
   process.call(registry, Lookup(_, name), 100)
@@ -87,7 +87,7 @@ pub fn lookup(
 /// Ok(registered_subject)
 /// ```
 pub fn register(
-  registry: Subject(Action(name, message)),
+  registry: Subject(Message(name, message)),
   start: fn() -> Result(Subject(message), actor.StartError),
 ) -> Result(Subject(message), actor.StartError) {
   use subject <- try(start())
@@ -104,7 +104,7 @@ pub fn register(
 /// Ok(registered_subject)
 /// ```
 pub fn register_as(
-  registry: Subject(Action(name, message)),
+  registry: Subject(Message(name, message)),
   name: name,
   start: fn() -> Result(Subject(message), actor.StartError),
 ) -> Result(Subject(message), actor.StartError) {
@@ -121,7 +121,7 @@ pub fn register_as(
 /// > chip.deregister(registry, "MySubjects")
 /// Nil
 /// ```
-pub fn deregister(registry: Subject(Action(name, message)), name: name) -> Nil {
+pub fn deregister(registry: Subject(Message(name, message)), name: name) -> Nil {
   process.send(registry, Deregister(name))
 }
 
@@ -133,13 +133,13 @@ pub fn deregister(registry: Subject(Action(name, message)), name: name) -> Nil {
 /// > chip.stop(registry)
 /// Normal
 /// ```
-pub fn stop(registry: Subject(Action(name, message))) -> process.ExitReason {
+pub fn stop(registry: Subject(Message(name, message))) -> process.ExitReason {
   process.call(registry, Stop(_), 10)
 }
 
 fn handle_init() -> actor.InitResult(
   State(name, message),
-  Action(name, message),
+  Message(name, message),
 ) {
   let subject = process.new_subject()
 
@@ -159,7 +159,7 @@ fn handle_init() -> actor.InitResult(
   actor.Ready(state, selector)
 }
 
-fn handle_message(message: Action(name, message), state: State(name, message)) {
+fn handle_message(message: Message(name, message), state: State(name, message)) {
   case message {
     All(client) -> {
       let subjects = set.to_list(state.group)
@@ -265,11 +265,9 @@ fn insert_as(
 fn delete_named(state: State(name, message), name: name) -> State(name, message) {
   let other_named = dict.delete(state.named, name)
   let other_subjects =
-    dict.fold(
-      other_named,
-      set.new(),
-      fn(all_subjects, _name, subjects) { set.union(all_subjects, subjects) },
-    )
+    dict.fold(other_named, set.new(), fn(all_subjects, _name, subjects) {
+      set.union(all_subjects, subjects)
+    })
 
   let subjects = get_group(state.named, name)
 
@@ -356,10 +354,10 @@ fn rebuild_process_down_selectors(
 }
 
 fn receive_process_down(
-  selector: Selector(Action(name, message)),
+  selector: Selector(Message(name, message)),
   monitor: ProcessMonitor,
   subject: Subject(message),
-) -> Selector(Action(name, message)) {
+) -> Selector(Message(name, message)) {
   let handle = fn(_process: ProcessDown) { Demonitor(subject) }
   process.selecting_process_down(selector, monitor, handle)
 }
