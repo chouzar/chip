@@ -16,6 +16,7 @@ import gleam/otp/actor
 
 pub opaque type Message(name, message) {
   All(client: Subject(List(Subject(message))))
+  Named(client: Subject(List(#(name, Subject(message)))))
   Lookup(client: Subject(List(Subject(message))), name: name)
   Register(subject: Subject(message))
   RegisterAs(subject: Subject(message), name: name)
@@ -61,6 +62,19 @@ pub fn start() -> Result(Subject(Message(name, message)), actor.StartError) {
 /// ```
 pub fn all(registry: Subject(Message(name, message))) -> List(Subject(message)) {
   process.call(registry, All(_), 100)
+}
+
+/// Returns all named `Subject's` indexed by its key.
+///
+/// ### Example
+/// 
+/// ```gleam
+/// > chip.named(registry) 
+/// [#(GroupA, subject_a), #(GroupA, subject_b), #(GroupC, subject_c)]
+pub fn named(
+  registry: Subject(Message(name, message)),
+) -> List(#(name, Subject(message))) {
+  process.call(registry, Named(_), 100)
 }
 
 /// Looks up named subgroup of `Subject`s.
@@ -164,6 +178,21 @@ fn handle_message(message: Message(name, message), state: State(name, message)) 
     All(client) -> {
       let subjects = set.to_list(state.group)
       process.send(client, subjects)
+
+      actor.continue(state)
+    }
+
+    Named(client) -> {
+      let indexed =
+        dict.fold(state.named, [], fn(acc, key, subjects) {
+          let indexed =
+            subjects
+            |> set.to_list()
+            |> list.map(fn(subject) { #(key, subject) })
+
+          list.append(indexed, acc)
+        })
+      process.send(client, indexed)
 
       actor.continue(state)
     }

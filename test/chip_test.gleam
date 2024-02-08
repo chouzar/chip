@@ -1,4 +1,5 @@
 import gleeunit
+import gleam/int
 import gleam/list
 import gleam/erlang/process
 import gleam/otp/actor
@@ -41,18 +42,18 @@ pub fn group_test() {
 pub fn named_group_test() {
   let assert Ok(registry) = chip.start()
 
-  let start_counter = fn(name, count) {
+  let counter = fn(name, count) {
     chip.register_as(registry, name, fn() { start_counter(count) })
   }
 
   let assert [] = chip.all(registry)
 
-  let assert Ok(counter_1) = start_counter(GroupA, 10)
-  let assert Ok(counter_2) = start_counter(GroupB, 100)
-  let assert Ok(counter_3) = start_counter(GroupB, 1000)
-  let assert Ok(counter_4) = start_counter(GroupC, 10_000)
-  let assert Ok(counter_5) = start_counter(GroupC, 100_000)
-  let assert Ok(counter_6) = start_counter(GroupC, 1_000_000)
+  let assert Ok(counter_1) = counter(GroupA, 10)
+  let assert Ok(counter_2) = counter(GroupB, 100)
+  let assert Ok(counter_3) = counter(GroupB, 1000)
+  let assert Ok(counter_4) = counter(GroupC, 10_000)
+  let assert Ok(counter_5) = counter(GroupC, 100_000)
+  let assert Ok(counter_6) = counter(GroupC, 1_000_000)
 
   let assert [_, _, _, _, _, _] = chip.all(registry)
   let assert [_] = chip.lookup(registry, GroupA)
@@ -76,6 +77,25 @@ pub fn named_group_test() {
   let assert 10_002 = process.call(counter_4, Current(_), 10)
   let assert 100_002 = process.call(counter_5, Current(_), 10)
   let assert 1_000_002 = process.call(counter_6, Current(_), 10)
+
+  // Check that indexes are returned when retrieving all named
+  let assert Ok(registry) = chip.start()
+
+  let start_counter = fn(name, count) {
+    chip.register_as(registry, name, fn() { start_counter(count) })
+  }
+
+  let assert Ok(_) = start_counter(1, 10)
+  let assert Ok(_) = start_counter(2, 100)
+  let assert Ok(_) = start_counter(3, 1000)
+
+  let assert [#(1, counter_1), #(2, counter_2), #(3, counter_3)] =
+    chip.named(registry)
+    |> list.sort(compare)
+
+  let assert 10 = process.call(counter_1, Current(_), 10)
+  let assert 100 = process.call(counter_2, Current(_), 10)
+  let assert 1000 = process.call(counter_3, Current(_), 10)
 }
 
 pub fn deregister_test() {
@@ -219,4 +239,11 @@ fn handle_count(message: CounterMessage, count: Int) {
       actor.Stop(process.Normal)
     }
   }
+}
+
+fn compare(left, right) {
+  let #(l_key, _) = left
+  let #(r_key, _) = right
+
+  int.compare(l_key, r_key)
 }
