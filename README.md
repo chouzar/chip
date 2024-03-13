@@ -90,11 +90,11 @@ pub fn main() {
     actor.start(1, handle_count)
   })
   
-  chip.register(registry, GroupB, fn() { 
+  chip.register_as(registry, GroupB, fn() { 
     actor.start(2, handle_count)
   })
   
-  chip.register(registry, GroupA, fn() { 
+  chip.register_as(registry, GroupA, fn() { 
     actor.start(3, handle_count)
   })
 }
