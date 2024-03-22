@@ -110,9 +110,10 @@ let assert [1, 3] =
 
 Feature-wise this is near beign complete. Still planning to integrate: 
 
-* A `via` helper to initialize processes explicitly, currently `register` and `register_as`).
-* A `register` helper to implicitly initialize subjects.
-* Pending to document guides and use-cases.
+- Modify the API to be more in-line with current elixir registry library. 
+- Generally improve performance and memory consumption by running benchmarks. 
+- Document guides and use-cases, make test cases more readable. 
+- Should play well with gleam style of supervisors. 
 
 ## Installation
 
