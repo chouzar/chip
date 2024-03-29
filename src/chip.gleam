@@ -25,10 +25,6 @@ type Index {
   Index(pid: Pid, monitor: ProcessMonitor)
 }
 
-type Record(msg, name, group) {
-  Record(subject: Subject(msg), names: Set(name), groups: Set(group))
-}
-
 type SubjectLocation(name, group, msg) {
   NamedLocation(name)
   GroupedLocation(group, Subject(msg))
