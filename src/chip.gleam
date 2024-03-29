@@ -1,50 +1,55 @@
-////Chip is a gleam process registry that plays along gleam erlang/OTP `Subject` type. 
-////
-////It lets us group subjects of the same type so that we can later reference them all 
-////as a group, or sub-group if we decide to name them. Will also automatically delist 
-////dead processes.
-
 import gleam/list
-import gleam/dict.{type Dict}
 import gleam/set.{type Set}
-import gleam/result.{try}
-import gleam/function.{identity}
+import gleam/dict.{type Dict}
+import gleam/option.{type Option, None, Some}
 import gleam/erlang/process.{
   type Pid, type ProcessDown, type ProcessMonitor, type Selector, type Subject,
 }
 import gleam/otp/actor
+import gleam/io
 
-pub opaque type Message(name, message) {
-  All(client: Subject(List(Subject(message))))
-  Named(client: Subject(List(#(name, Subject(message)))))
-  Lookup(client: Subject(List(Subject(message))), name: name)
-  Register(subject: Subject(message))
-  RegisterAs(subject: Subject(message), name: name)
-  Deregister(name: name)
-  Demonitor(subject: Subject(message))
-  RebuildSelector
-  Stop(client: Subject(process.ExitReason))
+type Registry(name, group, message) =
+  Subject(Message(name, group, message))
+
+pub opaque type Message(name, group, msg) {
+  Names(client: Subject(List(name)))
+  NamedContent(client: Subject(Result(Subject(msg), Nil)), name: name)
+  NamedRegistrant(subject: Subject(msg), name: name)
+  Groups(client: Subject(List(group)))
+  GroupedContent(client: Subject(List(Subject(msg))), group: group)
+  GroupedRegistrant(subject: Subject(msg), group: group)
+  Demonitor(index: Index)
 }
 
-type State(name, message) {
+type Index {
+  Index(pid: Pid, monitor: ProcessMonitor)
+}
+
+type Record(msg, name, group) {
+  Record(subject: Subject(msg), names: Set(name), groups: Set(group))
+}
+
+type SubjectLocation(name, group, msg) {
+  NamedLocation(name)
+  GroupedLocation(group, Subject(msg))
+}
+
+type State(name, group, msg) {
   State(
-    self: Subject(Message(name, message)),
-    index: Dict(Pid, ProcessMonitor),
-    group: Set(Subject(message)),
-    named: Dict(name, Set(Subject(message))),
-    selector: Selector(Message(name, message)),
+    // This is were all registered subjects are stored.
+    // subjects: Dict(Reference, Subject(msg)),
+    // This tags a subject under a unique name.
+    names: Dict(name, Subject(msg)),
+    // This tags multiple subjects under a group.
+    groups: Dict(group, Set(Subject(msg))),
+    // Index to help track monitored subjects and where to look on de-registration.
+    subject_track: Dict(Pid, Set(SubjectLocation(name, group, msg))),
+    // There's no way of retrieving previous selector from current process, so we manually track it here.
+    selector: Selector(Message(name, group, msg)),
   )
 }
 
-/// Starts the registry.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// > chip.start()
-/// Ok(registry)
-/// ```
-pub fn start() -> Result(Subject(Message(name, message)), actor.StartError) {
+pub fn start() -> Result(Registry(name, group, msg), actor.StartError) {
   actor.start_spec(actor.Spec(
     init: handle_init,
     init_timeout: 10,
@@ -52,341 +57,243 @@ pub fn start() -> Result(Subject(Message(name, message)), actor.StartError) {
   ))
 }
 
-/// Returns all registered `Subject`s.
-/// 
-/// ### Example
-/// 
-/// ```gleam
-/// > chip.all(registry) 
-/// [subject_a, subject_b, subject_c]
-/// ```
-pub fn all(registry: Subject(Message(name, message))) -> List(Subject(message)) {
-  process.call(registry, All(_), 100)
+pub fn registered_names(registry) -> List(name) {
+  process.call(registry, Names(_), 10)
 }
 
-/// Returns all named `Subject's` indexed by its key.
-///
-/// ### Example
-/// 
-/// ```gleam
-/// > chip.named(registry) 
-/// [#(GroupA, subject_a), #(GroupA, subject_b), #(GroupC, subject_c)]
-pub fn named(
-  registry: Subject(Message(name, message)),
-) -> List(#(name, Subject(message))) {
-  process.call(registry, Named(_), 100)
+pub fn registered_groups(registry) -> List(group) {
+  process.call(registry, Groups(_), 10)
 }
 
-/// Looks up named subgroup of `Subject`s.
-/// 
-/// ### Example
-/// 
-/// ```gleam
-/// > chip.lookup(registry, "MySubjects") 
-/// [subject_a, subject_c]
-/// ```
-pub fn lookup(
-  registry: Subject(Message(name, message)),
-  name: name,
-) -> List(Subject(message)) {
-  process.call(registry, Lookup(_, name), 100)
+pub fn find(registry, name) -> Result(Subject(mssg), Nil) {
+  process.call(registry, NamedContent(_, name), 10)
 }
 
-/// Manually registers a `Subject`. 
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// > chip.register(registry, fn() { start_my_subject() })
-/// Ok(registered_subject)
-/// ```
+pub fn members(registry, group) -> List(Subject(msg)) {
+  process.call(registry, GroupedContent(_, group), 10)
+}
+
 pub fn register(
-  registry: Subject(Message(name, message)),
-  start: fn() -> Result(Subject(message), actor.StartError),
-) -> Result(Subject(message), actor.StartError) {
-  use subject <- try(start())
-  process.send(registry, Register(subject))
-  Ok(subject)
-}
-
-/// Manually registers a `Subject` under a named group. 
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// > chip.register(registry, "MySubjects", fn() { start_my_subject() })
-/// Ok(registered_subject)
-/// ```
-pub fn register_as(
-  registry: Subject(Message(name, message)),
+  registry: Subject(Message(name, group, message)),
+  subject: Subject(message),
   name: name,
-  start: fn() -> Result(Subject(message), actor.StartError),
-) -> Result(Subject(message), actor.StartError) {
-  use subject <- try(start())
-  process.send(registry, RegisterAs(subject, name))
-  Ok(subject)
+) -> Nil {
+  process.send(registry, NamedRegistrant(subject, name))
 }
 
-/// Manually deregister a named group of `Subject`s.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// > chip.deregister(registry, "MySubjects")
-/// Nil
-/// ```
-pub fn deregister(registry: Subject(Message(name, message)), name: name) -> Nil {
-  process.send(registry, Deregister(name))
+pub fn group(
+  registry: Subject(Message(name, group, message)),
+  subject: Subject(message),
+  group: group,
+) -> Nil {
+  process.send(registry, GroupedRegistrant(subject, group))
 }
 
-/// Stops the registry, all grouped `Subject`s will be gone.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// > chip.stop(registry)
-/// Normal
-/// ```
-pub fn stop(registry: Subject(Message(name, message))) -> process.ExitReason {
-  process.call(registry, Stop(_), 10)
-}
-
-fn handle_init() -> actor.InitResult(
-  State(name, message),
-  Message(name, message),
-) {
-  let subject = process.new_subject()
-
-  let selector =
-    process.new_selector()
-    |> process.selecting(subject, identity)
-
+fn handle_init() {
   let state =
     State(
-      self: subject,
-      index: dict.new(),
-      group: set.new(),
-      named: dict.new(),
-      selector: selector,
+      names: dict.new(),
+      groups: dict.new(),
+      subject_track: dict.new(),
+      selector: process.new_selector(),
     )
 
-  actor.Ready(state, selector)
+  actor.Ready(state, state.selector)
 }
 
-fn handle_message(message: Message(name, message), state: State(name, message)) {
+fn handle_message(
+  message: Message(name, group, message),
+  state: State(name, group, message),
+) {
   case message {
-    All(client) -> {
-      let subjects = set.to_list(state.group)
+    Names(client) -> {
+      let names = dict.keys(state.names)
+      process.send(client, names)
+      actor.continue(state)
+    }
+
+    NamedContent(client, name) -> {
+      let result = dict.get(state.names, name)
+      process.send(client, result)
+      actor.continue(state)
+    }
+
+    NamedRegistrant(subject, name) -> {
+      let pid = process.subject_owner(subject)
+      let selection = monitor(state, pid)
+
+      state
+      |> into_names(name, subject)
+      |> into_tracker(pid, NamedLocation(name))
+      |> into_selector(selection)
+      |> actor.Continue(selection)
+    }
+
+    Groups(client) -> {
+      let groups = dict.keys(state.groups)
+      process.send(client, groups)
+      actor.continue(state)
+    }
+
+    GroupedContent(client, group) -> {
+      let subjects = case dict.get(state.groups, group) {
+        Ok(subjects) -> set.to_list(subjects)
+        Error(Nil) -> []
+      }
+
       process.send(client, subjects)
-
       actor.continue(state)
     }
 
-    Named(client) -> {
-      let indexed =
-        dict.fold(state.named, [], fn(acc, key, subjects) {
-          let indexed =
-            subjects
-            |> set.to_list()
-            |> list.map(fn(subject) { #(key, subject) })
+    GroupedRegistrant(subject, group) -> {
+      let pid = process.subject_owner(subject)
+      let selection = monitor(state, pid)
 
-          list.append(indexed, acc)
-        })
-      process.send(client, indexed)
-
-      actor.continue(state)
+      state
+      |> into_group(group, subject)
+      |> into_tracker(pid, GroupedLocation(group, subject))
+      |> into_selector(selection)
+      |> actor.Continue(selection)
     }
 
-    Lookup(client, name) -> {
-      let subjects =
-        get_group(state.named, name)
-        |> set.to_list()
-      process.send(client, subjects)
+    Demonitor(Index(pid, monitor)) -> {
+      // Demonitor process
+      process.demonitor_process(monitor)
 
-      actor.continue(state)
-    }
-
-    Register(subject) -> {
-      let state = insert(state, subject)
-
-      actor.continue(state)
-      |> actor.with_selector(state.selector)
-    }
-
-    RegisterAs(subject, name) -> {
-      let state = insert_as(state, subject, name)
-
-      actor.continue(state)
-      |> actor.with_selector(state.selector)
-    }
-
-    Deregister(name) -> {
-      let state = delete_named(state, name)
-      process.send(state.self, RebuildSelector)
-
-      actor.continue(state)
-    }
-
-    Demonitor(subject) -> {
-      let state = demonitor_subject(state, subject)
-      process.send(state.self, RebuildSelector)
-
-      actor.continue(state)
-    }
-
-    RebuildSelector -> {
-      let state = rebuild_process_down_selectors(state)
-
-      actor.continue(state)
-      |> actor.with_selector(state.selector)
-    }
-
-    Stop(client) -> {
-      process.send(client, process.Normal)
-
-      actor.Stop(process.Normal)
+      state
+      |> remove_from_group(pid)
+      |> remove_from_tracker(pid)
+      |> actor.continue()
     }
   }
 }
 
-fn insert(
-  state: State(name, message),
-  subject: Subject(message),
-) -> State(name, message) {
-  let pid = process.subject_owner(subject)
+fn into_names(
+  state: State(name, group, msg),
+  name: name,
+  subject: Subject(msg),
+) -> State(name, group, msg) {
+  State(..state, names: dict.insert(state.names, name, subject))
+}
 
-  case dict.get(state.index, pid) {
-    Ok(monitor) -> {
-      let group = set.insert(state.group, subject)
-      let selector = receive_process_down(state.selector, monitor, subject)
+fn into_group(
+  state: State(name, group, msg),
+  group: group,
+  subject: Subject(msg),
+) -> State(name, group, msg) {
+  let add_subject = fn(option) {
+    case option {
+      Some(subjects) -> set.insert(subjects, subject)
+      None -> set.insert(set.new(), subject)
+    }
+  }
 
-      State(..state, group: group, selector: selector)
+  State(..state, groups: dict.update(state.groups, group, add_subject))
+}
+
+fn into_tracker(
+  state: State(name, group, msg),
+  pid: Pid,
+  location: SubjectLocation(name, group, msg),
+) -> State(name, group, msg) {
+  let add_location = fn(option) {
+    case option {
+      Some(locations) -> set.insert(locations, location)
+      None -> set.insert(set.new(), location)
+    }
+  }
+
+  State(
+    ..state,
+    subject_track: dict.update(state.subject_track, pid, add_location),
+  )
+}
+
+fn into_selector(
+  state: State(name, group, msg),
+  selection: Option(Selector(Message(name, group, msg))),
+) -> State(name, group, msg) {
+  case selection {
+    Some(selector) -> State(..state, selector: selector)
+    None -> state
+  }
+}
+
+fn remove_from_group(
+  state: State(name, group, msg),
+  pid: Pid,
+) -> State(name, group, msg) {
+  let locations = case dict.get(state.subject_track, pid) {
+    Ok(locations) -> {
+      set.to_list(locations)
+    }
+    Error(Nil) -> {
+      io.print("pid was not in registry")
+      io.debug(pid)
+      panic as "pid was not in registry"
+    }
+  }
+
+  list.fold(locations, state, fn(state, location) {
+    case location {
+      GroupedLocation(group, subject) ->
+        case dict.get(state.groups, group) {
+          Ok(subjects) -> {
+            let subjects = set.delete(subjects, subject)
+            let groups = dict.insert(state.groups, group, subjects)
+            State(..state, groups: groups)
+          }
+
+          Error(Nil) -> {
+            io.print("group was not in registry")
+            io.debug(group)
+            panic as "group was not in registry"
+          }
+        }
+
+      NamedLocation(name) -> {
+        let names = dict.delete(state.names, name)
+        State(..state, names: names)
+      }
+    }
+  })
+}
+
+fn remove_from_tracker(
+  state: State(name, group, msg),
+  pid: Pid,
+) -> State(name, group, msg) {
+  State(..state, subject_track: dict.delete(state.subject_track, pid))
+}
+
+fn monitor(
+  state: State(name, group, msg),
+  pid: Pid,
+) -> Option(Selector(Message(name, group, msg))) {
+  // Check if this process is already registered.
+  case dict.get(state.subject_track, pid) {
+    Ok(_locations) -> {
+      // When process is already registered do nothing.
+      None
     }
 
     Error(Nil) -> {
+      // When it is a new process, monitor it.
       let monitor = process.monitor_process(pid)
-
-      let index = dict.insert(state.index, pid, monitor)
-      let group = set.insert(state.group, subject)
-      let selector = receive_process_down(state.selector, monitor, subject)
-
-      State(..state, index: index, group: group, selector: selector)
+      let selector = select_process_down(state.selector, pid, monitor)
+      Some(selector)
     }
   }
 }
 
-fn insert_as(
-  state: State(name, message),
-  subject: Subject(message),
-  name: name,
-) -> State(name, message) {
-  let subjects =
-    state.named
-    |> get_group(name)
-    |> set.insert(subject)
-
-  let named = dict.insert(state.named, name, subjects)
-
-  State(..state, named: named)
-  |> insert(subject)
-}
-
-fn delete_named(state: State(name, message), name: name) -> State(name, message) {
-  let other_named = dict.delete(state.named, name)
-  let other_subjects =
-    dict.fold(other_named, set.new(), fn(all_subjects, _name, subjects) {
-      set.union(all_subjects, subjects)
-    })
-
-  let subjects = get_group(state.named, name)
-
-  let subjects_to_keep =
-    set.intersection(subjects, other_subjects)
-    |> set.to_list()
-
-  let subjects_to_delete =
-    set.drop(subjects, subjects_to_keep)
-    |> set.to_list()
-
-  let pids_to_delete =
-    subjects_to_delete
-    |> list.map(fn(subject) { process.subject_owner(subject) })
-
-  let monitors =
-    state.index
-    |> dict.take(pids_to_delete)
-    |> dict.values()
-
-  list.each(monitors, process.demonitor_process)
-
-  let index = dict.drop(state.index, pids_to_delete)
-  let group = set.drop(state.group, subjects_to_delete)
-  let named = dict.delete(state.named, name)
-  State(..state, index: index, group: group, named: named)
-}
-
-fn demonitor_subject(
-  state: State(name, message),
-  subject: Subject(message),
-) -> State(name, message) {
-  let pid = process.subject_owner(subject)
-
-  case dict.get(state.index, pid) {
-    Ok(monitor) -> {
-      process.demonitor_process(monitor)
-
-      let index = dict.delete(state.index, pid)
-      let group = set.delete(state.group, subject)
-      let delete = fn(_name, subjects) { set.delete(subjects, subject) }
-      let named = dict.map_values(state.named, delete)
-
-      State(..state, index: index, group: group, named: named)
-    }
-
-    Error(Nil) -> state
-  }
-}
-
-fn get_group(
-  named: Dict(name, Set(Subject(message))),
-  name: name,
-) -> Set(Subject(message)) {
-  case dict.get(named, name) {
-    Ok(subjects) -> subjects
-    Error(Nil) -> set.new()
-  }
-}
-
-fn rebuild_process_down_selectors(
-  state: State(name, message),
-) -> State(name, message) {
-  let self = process.new_subject()
-
-  let subjects = set.to_list(state.group)
-
-  let selector =
-    process.new_selector()
-    |> process.selecting(self, identity)
-    |> list.fold(
-      subjects,
-      _,
-      fn(selector, subject) {
-        let pid = process.subject_owner(subject)
-        case dict.get(state.index, pid) {
-          Ok(monitor) -> receive_process_down(selector, monitor, subject)
-          Error(Nil) -> selector
-        }
-      },
-    )
-
-  State(..state, self: self, selector: selector)
-}
-
-fn receive_process_down(
-  selector: Selector(Message(name, message)),
+fn select_process_down(
+  selector: Selector(Message(name, group, msg)),
+  pid: Pid,
   monitor: ProcessMonitor,
-  subject: Subject(message),
-) -> Selector(Message(name, message)) {
-  let handle = fn(_process: ProcessDown) { Demonitor(subject) }
+) -> Selector(Message(name, group, msg)) {
+  // Build the selector with an index to track down the location of subjects 
+  // when a the process goes down.
+  let index = Index(pid, monitor)
+  let handle = fn(_: ProcessDown) { Demonitor(index) }
   process.selecting_process_down(selector, monitor, handle)
 }
