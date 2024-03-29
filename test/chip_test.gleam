@@ -11,6 +11,49 @@ pub fn main() {
   gleeunit.main()
 }
 
+pub fn gluncle_tests() {
+  describe("avoid race conditions on same name?", setup, fn(context) {
+    let Context(registry, c1, c2, c3, c4, ..) = context
+
+    // We can register unique names 
+    let Nil = chip.register(registry, c1, "one")
+    let Nil = chip.register(registry, c2, "two")
+    let Nil = chip.register(registry, c3, "three")
+
+    // We can also overwrite existing names 
+    let Nil = chip.register(registry, c1, "two")
+
+    // To avoid a race condition we may do a find and register
+    case chip.find(registry, "four") {
+      Ok(counter) -> {
+        counter
+      }
+
+      Error(Nil) -> {
+        let Nil = chip.register(registry, c4, "four")
+        c4
+      }
+    }
+  })
+
+  describe("this is how grouping works", setup, fn(context) {
+    let Context(registry, c1, c2, c3, c4, c5, c6) = context
+    chip.group(registry, c1, GroupA)
+    chip.group(registry, c2, GroupB)
+    chip.group(registry, c3, GroupB)
+    chip.group(registry, c4, GroupC)
+    chip.group(registry, c5, GroupC)
+    chip.group(registry, c6, GroupC)
+
+    let assert [_] = chip.members(registry, GroupA)
+    let assert [_, _] = chip.members(registry, GroupB)
+    let assert [_, _, _] = chip.members(registry, GroupC)
+    let assert [] = chip.members(registry, GroupD)
+    let assert [] = chip.members(registry, GroupE)
+  })
+}
+
+/// ---------------- Test helpers to setup and tag a tests ---------------- ///
 type Context {
   Context(
     registry: Subject(chip.Message(String, Groups, Message)),
@@ -33,67 +76,9 @@ fn setup() -> Context {
   let assert Ok(c5) = start_counter(100_000)
   let assert Ok(c6) = start_counter(1_000_000)
 
-  chip.group(registry, c1, GroupA)
-  chip.group(registry, c2, GroupB)
-  chip.group(registry, c3, GroupB)
-  chip.group(registry, c4, GroupC)
-  chip.group(registry, c5, GroupC)
-  chip.group(registry, c6, GroupC)
-
   Context(registry, c1, c2, c3, c4, c5, c6)
 }
 
-pub fn start_test() {
-  let assert Ok(_registry) = chip.start()
-}
-
-pub fn find_test() {
-  let setup = fn() -> Context {
-    let context = setup()
-
-    chip.register(context.registry, context.counter_1, "1")
-    chip.register(context.registry, context.counter_2, "2")
-    chip.register(context.registry, context.counter_3, "3")
-
-    context
-  }
-
-  describe("can find a named subject", setup, fn(context) {
-    let assert Ok(_counter_1) = chip.find(context.registry, "1")
-    let assert Ok(_counter_2) = chip.find(context.registry, "2")
-    let assert Ok(_counter_3) = chip.find(context.registry, "3")
-  })
-
-  describe("unable to find a name not tied to a subject", setup, fn(context) {
-    let assert Error(Nil) = chip.find(context.registry, "counter-0")
-    let assert Error(Nil) = chip.find(context.registry, "counter-5")
-  })
-}
-
-pub fn members_test() {
-  let setup = fn() -> Context {
-    let context = setup()
-
-    chip.group(context.registry, context.counter_1, GroupA)
-    chip.group(context.registry, context.counter_2, GroupB)
-    chip.group(context.registry, context.counter_3, GroupB)
-    chip.group(context.registry, context.counter_4, GroupC)
-    chip.group(context.registry, context.counter_5, GroupC)
-    chip.group(context.registry, context.counter_6, GroupC)
-
-    context
-  }
-
-  describe("can find all members of each group", setup, fn(context) {
-    let assert [_] = chip.members(context.registry, GroupA)
-    let assert [_, _] = chip.members(context.registry, GroupB)
-    let assert [_, _, _] = chip.members(context.registry, GroupC)
-    let assert [] = chip.members(context.registry, GroupD)
-    let assert [] = chip.members(context.registry, GroupE)
-  })
-}
-
-/// Test Helpers to setup and tag a test.
 type Groups {
   GroupA
   GroupB
