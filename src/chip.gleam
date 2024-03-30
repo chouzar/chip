@@ -15,6 +15,11 @@ pub opaque type Message(name, group, msg) {
   Names(client: Subject(List(name)))
   NamedContent(client: Subject(Result(Subject(msg), Nil)), name: name)
   NamedRegistrant(subject: Subject(msg), name: name)
+  TryNamedRegistrant(
+    client: Subject(Result(Nil, Subject(msg))),
+    subject: Subject(msg),
+    name: name,
+  )
   Groups(client: Subject(List(group)))
   GroupedContent(client: Subject(List(Subject(msg))), group: group)
   GroupedRegistrant(subject: Subject(msg), group: group)
@@ -77,6 +82,14 @@ pub fn register(
   process.send(registry, NamedRegistrant(subject, name))
 }
 
+pub fn try_register(
+  registry: Subject(Message(name, group, message)),
+  subject: Subject(message),
+  name: name,
+) -> Result(Nil, Subject(message)) {
+  process.call(registry, TryNamedRegistrant(_, subject, name), 10)
+}
+
 pub fn group(
   registry: Subject(Message(name, group, message)),
   subject: Subject(message),
@@ -123,6 +136,19 @@ fn handle_message(
       |> into_tracker(pid, NamedLocation(name))
       |> into_selector(selection)
       |> actor.Continue(selection)
+    }
+
+    TryNamedRegistrant(client, subject, name) -> {
+      case dict.get(state.names, name) {
+        Ok(subject) -> {
+          process.send(client, Error(subject))
+          actor.continue(state)
+        }
+        Error(_) -> {
+          process.send(client, Ok(Nil))
+          handle_message(NamedRegistrant(subject, name), state)
+        }
+      }
     }
 
     Groups(client) -> {

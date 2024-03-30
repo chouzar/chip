@@ -4,6 +4,7 @@ import gleam/erlang/process
 import gleam/otp/supervisor
 import gleam/otp/actor
 import chip
+import gleam/io
 
 pub fn main() {
   gleeunit.main()
@@ -94,6 +95,46 @@ fn find_until(registry, name, milliseconds) {
     }
   }
 }
+
+pub fn leaky_subject_test() {
+  let assert Ok(registry) = chip.start()
+  let assert Ok(counter) = actor.start(0, loop)
+
+  // Comment and uncomment line below:
+  chip.register(registry, counter, "bob")
+
+  let assert Ok(new_counter) = actor.start(0, loop)
+
+  case chip.try_register(registry, new_counter, "bob") {
+    Ok(Nil) -> {
+      io.debug("new bob was created!")
+      io.debug(new_counter)
+      counter
+    }
+
+    Error(registered_counter) -> {
+      io.debug("bob exists, nothing to do here")
+
+      io.debug("real bob:")
+      io.debug(registered_counter)
+
+      io.debug("wanna be bob:")
+      io.debug(new_counter)
+
+      io.debug("lets kill wanna be bob")
+
+      new_counter
+      |> process.subject_owner()
+      |> process.kill()
+
+      registered_counter
+    }
+  }
+}
+
+//subject
+//  |> process.subject_owner
+// |> process.kill
 
 //*---------------- Test helpers to setup and tag a tests ----------------*//
 
