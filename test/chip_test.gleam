@@ -109,7 +109,7 @@ pub fn leaky_subject_test() {
     Ok(Nil) -> {
       io.debug("new bob was created!")
       io.debug(new_counter)
-      counter
+      new_counter
     }
 
     Error(registered_counter) -> {
@@ -122,10 +122,11 @@ pub fn leaky_subject_test() {
       io.debug(new_counter)
 
       io.debug("lets kill wanna be bob")
-
-      new_counter
-      |> process.subject_owner()
-      |> process.kill()
+      // Comment and uncomment the kill:
+      // new_counter
+      // |> process.subject_owner()
+      // |> process.kill()
+      stop_counter(new_counter)
 
       registered_counter
     }
