@@ -4,9 +4,9 @@
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
 
-////Chip is a gleam process registry that plays along the [Gleam Erlang](https://hexdocs.pm/gleam_erlang/) `Subject` type. 
-////
-////It lets tag subjects under a name or group to later reference them. Will also automatically delist dead processes.
+Chip is a gleam process registry that plays along the [Gleam Erlang](https://hexdocs.pm/gleam_erlang/) `Subject` type. 
+
+It lets tag subjects under a name or group to later reference them. Will also automatically delist dead processes.
 
 ### Example
 

@@ -17,26 +17,24 @@ type Registry(name, group, message) =
 
 /// This is the message type used internally by Chip. 
 /// 
-/// Its generics `name`, `group`, and `msg` correspond to whatever types we do want to assign to the 
-/// registry when initializing. A Chip instance only accepts `Subject's of the same type so it is 
-/// sometimes useful to state the types on startup. For example: 
+/// `Message(name, group, msg)` generics correspond to the types that the registry will use to manage
+/// unique names, group names and Subject messages. When building your system it is useful to state 
+/// these on startup. For example: 
 /// 
 /// ```gleam
 /// type Group {
-///   GroupA
-///   GroupB
-///   GroupC
+///   A
+///   B
+///   C
 /// }
 /// 
-/// > let assert Ok(registry) = chip.start()
-/// > let registry: process.Subject(chip.Message(String, Group, Chat))
+/// let assert Ok(registry) = chip.start()
+/// let registry: process.Subject(chip.Message(String, Group, Chat))
 /// ```
 /// 
 /// By specifying the types we can document the kind of registry we are working with. For example the 
 /// registry above lets us tag subjects that use the `Subject(Chat)` type; it lets us tag individual 
-/// subjects through stringified names; finally lets us group subjects into a group A, B or C. 
-/// 
-/// Of course we can always rely on gleam's type inference to do the typing for us. 
+/// subjects through stringified names; finally lets us group subjects into a groups A, B or C. 
 pub opaque type Message(name, group, msg) {
   NamedSubject(client: Subject(Result(Subject(msg), Nil)), name: name)
   NamedRegistrant(subject: Subject(msg), name: name)
@@ -135,7 +133,7 @@ pub fn group(
 /// 
 /// ```gleam
 /// > chip.find(registry, "group-a") 
-/// [subject]
+/// [subject_1, subject_2, subject_3]
 /// ```
 pub fn members(registry, group) -> List(Subject(msg)) {
   process.call(registry, GroupedSubjects(_, group), 10)
@@ -149,6 +147,8 @@ pub fn members(registry, group) -> List(Subject(msg)) {
 /// > chip.broadcast(registry, "group-a", fn(subject) { 
 /// >   process.send(subject, Message(data))
 /// > })
+/// Nil
+/// ```
 pub fn broadcast(
   registry: Subject(Message(name, group, message)),
   group: group,
