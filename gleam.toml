@@ -1,5 +1,5 @@
 name = "chip"
-version = "0.2.1"
+version = "0.5.0"
 description = "A Gleam registry library"
 licences = ["Apache-2.0"]
 

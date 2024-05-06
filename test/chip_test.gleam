@@ -1,249 +1,263 @@
-import gleeunit
-import gleam/int
-import gleam/list
-import gleam/erlang/process
-import gleam/otp/actor
 import chip
+import counter
+import gleam/erlang/process
+import gleam/int
+import gleam/otp/supervisor
+import gleam/result
+import gleeunit
+
+//*---------------- start tests -===---------------*//
+
+pub fn can_start_registry_test() {
+  let assert Ok(_registry) = chip.start()
+}
+
+//*---------------- register tests ----------------*//
+
+pub fn can_register_subject_test() {
+  let assert Ok(registry) = chip.start()
+  let subject_1: process.Subject(Nil) = process.new_subject()
+  let subject_2: process.Subject(Nil) = process.new_subject()
+  let subject_3: process.Subject(Nil) = process.new_subject()
+
+  // manually register all subjects
+  let assert Nil = chip.register(registry, subject_1, "test-subject-1")
+  let assert Nil = chip.register(registry, subject_2, "test-subject-2")
+  let assert Nil = chip.register(registry, subject_3, "test-subject-3")
+}
+
+//*---------------- find tests -------------------*//
+
+pub fn can_retrieve_individual_subject_test() {
+  let assert Ok(registry) = chip.start()
+  let subject_1: process.Subject(Nil) = process.new_subject()
+  let subject_2: process.Subject(Nil) = process.new_subject()
+  let subject_3: process.Subject(Nil) = process.new_subject()
+
+  // manually register all subjects
+  chip.register(registry, subject_1, "test-subject-1")
+  chip.register(registry, subject_2, "test-subject-2")
+  chip.register(registry, subject_3, "test-subject-3")
+
+  let assert Ok(_subject) = chip.find(registry, "test-subject-1")
+  let assert Ok(_subject) = chip.find(registry, "test-subject-2")
+  let assert Ok(_subject) = chip.find(registry, "test-subject-3")
+}
+
+pub fn cannot_retrieve_with_unused_name_test() {
+  let assert Ok(registry) = chip.start()
+
+  let assert Error(Nil) = chip.find(registry, "nothing")
+}
+
+//*---------------- group tests -----------------*//
+
+pub fn can_group_subjects_test() {
+  let assert Ok(registry) = chip.start()
+  let subject_1: process.Subject(Nil) = process.new_subject()
+  let subject_2: process.Subject(Nil) = process.new_subject()
+  let subject_3: process.Subject(Nil) = process.new_subject()
+
+  let assert Nil = chip.group(registry, subject_1, GroupA)
+  let assert Nil = chip.group(registry, subject_2, GroupB)
+  let assert Nil = chip.group(registry, subject_3, GroupC)
+}
+
+//*---------------- members tests ---------------*//
+
+pub fn can_retrieve_grouped_subjects_test() {
+  let assert Ok(registry) = chip.start()
+  let s1: process.Subject(Nil) = process.new_subject()
+  let s2: process.Subject(Nil) = process.new_subject()
+  let s3: process.Subject(Nil) = process.new_subject()
+  let s4: process.Subject(Nil) = process.new_subject()
+  let s5: process.Subject(Nil) = process.new_subject()
+  let s6: process.Subject(Nil) = process.new_subject()
+
+  // manually group all subjects
+  chip.group(registry, s1, GroupA)
+  chip.group(registry, s2, GroupB)
+  chip.group(registry, s3, GroupB)
+  chip.group(registry, s4, GroupC)
+  chip.group(registry, s5, GroupC)
+  chip.group(registry, s6, GroupC)
+
+  // assert we can retrieve groups
+  let assert [_] = chip.members(registry, GroupA)
+  let assert [_, _] = chip.members(registry, GroupB)
+  let assert [_, _, _] = chip.members(registry, GroupC)
+}
+
+pub fn retrieves_an_empty_list_with_unused_group_test() {
+  let assert Ok(registry) = chip.start()
+
+  let assert [] = chip.members(registry, GroupA)
+}
+
+//*---------------- broadcast tests --------------*//
+
+pub fn broadcast_test() {
+  let assert Ok(registry) = chip.start()
+  let subject: process.Subject(Nil) = process.new_subject()
+  let assert Nil = chip.group(registry, subject, 0)
+
+  let assert Nil = chip.broadcast(registry, 0, fn(_subject) { Nil })
+}
+
+pub fn operations_are_applied_on_broadcast_test() {
+  // start a new counter registry
+  let assert Ok(registry) = chip.start()
+  let registry: Registry = registry
+
+  // actors being spawned
+  let assert Ok(counter_1) = counter.start(1)
+  let assert Ok(counter_2) = counter.start(2)
+  let assert Ok(counter_3) = counter.start(3)
+
+  //manually group all actors
+  chip.group(registry, counter_1, GroupA)
+  chip.group(registry, counter_2, GroupA)
+  chip.group(registry, counter_3, GroupA)
+
+  // assert that operations on group are succesful 
+  let assert [a, b, c] = chip.members(registry, GroupA)
+  let assert 6 = counter.current(a) + counter.current(b) + counter.current(c)
+
+  chip.broadcast(registry, GroupA, fn(subject) { counter.increment(subject) })
+
+  let assert [a, b, c] = chip.members(registry, GroupA)
+  let assert 9 = counter.current(a) + counter.current(b) + counter.current(c)
+}
+
+//*---------------- other tests ------------------*//
+
+pub fn subject_eventually_deregisters_after_process_dies_test() {
+  let assert Ok(registry) = chip.start()
+  let registry: Registry = registry
+
+  // start a new counter registry
+  let assert Ok(counter) = counter.start(0)
+  chip.register(registry, counter, "counter")
+
+  // stops the counter actor
+  counter.stop(counter)
+
+  // eventually the counter should be automatically de-registered
+  let find = fn() { chip.find(registry, "counter") }
+  let assert True = until(find, is: Error(Nil), for: 50)
+}
+
+pub fn subject_eventually_degroups_after_process_dies_test() {
+  let assert Ok(registry) = chip.start()
+  let registry: Registry = registry
+
+  // start a new counter registry
+  let assert Ok(counter) = counter.start(0)
+  chip.group(registry, counter, GroupA)
+
+  // stops the counter actor
+  counter.stop(counter)
+
+  // eventually the counter should be automatically de-registered
+  let find = fn() { chip.members(registry, GroupA) }
+  let assert True = until(find, is: [], for: 50)
+}
+
+pub fn registering_works_along_supervisor_test() {
+  let assert Ok(registry) = chip.start()
+  let registry: Registry = registry
+
+  // for each child the supervisor will increment the name and count
+  let children = fn(children) {
+    children
+    |> supervisor.add(child_spec(registry))
+    |> supervisor.add(child_spec(registry))
+    |> supervisor.add(child_spec(registry))
+  }
+
+  // start the supervisor
+  let assert Ok(_supervisor) =
+    supervisor.start_spec(supervisor.Spec(
+      argument: 1,
+      frequency_period: 1,
+      max_frequency: 5,
+      init: children,
+    ))
+
+  // assert we can retrieve individual subjects
+  let assert Ok(counter_1) = chip.find(registry, "counter-1")
+  let assert 1 = counter.current(counter_1)
+
+  let assert Ok(counter_2) = chip.find(registry, "counter-2")
+  let assert 2 = counter.current(counter_2)
+
+  let assert Ok(counter_3) = chip.find(registry, "counter-3")
+  let assert 3 = counter.current(counter_3)
+
+  // assert we're not able to retrieve non-registered subjects
+  let assert Error(Nil) = chip.find(registry, "counter-4")
+
+  // assert subject is restarted by the supervisor after actor dies
+  counter.stop(counter_2)
+
+  let different_subject = fn() {
+    case chip.find(registry, "counter-2") {
+      Ok(counter) if counter != counter_2 -> True
+      Ok(_) -> False
+      Error(_) -> False
+    }
+  }
+
+  let assert True = until(different_subject, is: True, for: 50)
+}
+
+//*---------------- Test helpers ----------------*//
 
 pub fn main() {
   gleeunit.main()
 }
 
-type Groups {
+type Registry =
+  process.Subject(chip.Message(String, Group, counter.Message))
+
+type Group {
   GroupA
   GroupB
   GroupC
 }
 
-pub fn group_test() {
-  let assert Ok(registry) = chip.start()
+fn child_spec(registry) {
+  // an actor will be spawned and immediately registered after success
+  let start = fn(id) {
+    let initial_count = id
+    let name = "counter-" <> int.to_string(id)
 
-  let start_counter = fn(count) {
-    chip.register(registry, fn() { start_counter(count) })
+    use subject <- result.try(counter.start(initial_count))
+    let Nil = chip.register(registry, subject, name)
+    Ok(subject)
   }
 
-  let assert [] = chip.all(registry)
+  // increment each registration by 1 in the supervisor
+  let updater = fn(id, _subject) { id + 1 }
 
-  let assert Ok(counter_1) = start_counter(10)
-  let assert Ok(counter_2) = start_counter(100)
-  let assert Ok(counter_3) = start_counter(1000)
-
-  let assert [_, _, _] = chip.all(registry)
-
-  registry
-  |> chip.all()
-  |> list.each(process.send(_, Inc))
-
-  let assert 11 = process.call(counter_1, Current(_), 10)
-  let assert 101 = process.call(counter_2, Current(_), 10)
-  let assert 1001 = process.call(counter_3, Current(_), 10)
+  // compose the updater and start function into a spec for the supervisor
+  supervisor.worker(start)
+  |> supervisor.returning(updater)
 }
 
-pub fn named_group_test() {
-  let assert Ok(registry) = chip.start()
-
-  let counter = fn(name, count) {
-    chip.register_as(registry, name, fn() { start_counter(count) })
-  }
-
-  let assert [] = chip.all(registry)
-
-  let assert Ok(counter_1) = counter(GroupA, 10)
-  let assert Ok(counter_2) = counter(GroupB, 100)
-  let assert Ok(counter_3) = counter(GroupB, 1000)
-  let assert Ok(counter_4) = counter(GroupC, 10_000)
-  let assert Ok(counter_5) = counter(GroupC, 100_000)
-  let assert Ok(counter_6) = counter(GroupC, 1_000_000)
-
-  let assert [_, _, _, _, _, _] = chip.all(registry)
-  let assert [_] = chip.lookup(registry, GroupA)
-  let assert [_, _] = chip.lookup(registry, GroupB)
-  let assert [_, _, _] = chip.lookup(registry, GroupC)
-
-  registry
-  |> chip.lookup(GroupB)
-  |> list.each(process.send(_, Inc))
-
-  registry
-  |> chip.lookup(GroupC)
-  |> list.each(fn(self) {
-    process.send(self, Inc)
-    process.send(self, Inc)
-  })
-
-  let assert 10 = process.call(counter_1, Current(_), 10)
-  let assert 101 = process.call(counter_2, Current(_), 10)
-  let assert 1001 = process.call(counter_3, Current(_), 10)
-  let assert 10_002 = process.call(counter_4, Current(_), 10)
-  let assert 100_002 = process.call(counter_5, Current(_), 10)
-  let assert 1_000_002 = process.call(counter_6, Current(_), 10)
-
-  // Check that indexes are returned when retrieving all named
-  let assert Ok(registry) = chip.start()
-
-  let start_counter = fn(name, count) {
-    chip.register_as(registry, name, fn() { start_counter(count) })
-  }
-
-  let assert Ok(_) = start_counter(1, 10)
-  let assert Ok(_) = start_counter(2, 100)
-  let assert Ok(_) = start_counter(3, 1000)
-
-  let assert [#(1, counter_1), #(2, counter_2), #(3, counter_3)] =
-    chip.named(registry)
-    |> list.sort(compare)
-
-  let assert 10 = process.call(counter_1, Current(_), 10)
-  let assert 100 = process.call(counter_2, Current(_), 10)
-  let assert 1000 = process.call(counter_3, Current(_), 10)
-}
-
-pub fn deregister_test() {
-  // Start registry and register 5 counters
-  let assert Ok(registry) = chip.start()
-
-  let assert Ok(counter_1) = start_counter(10)
-  let assert Ok(counter_2) = start_counter(100)
-  let assert Ok(counter_3) = start_counter(1000)
-  let assert Ok(counter_4) = start_counter(10_000)
-  let assert Ok(counter_5) = start_counter(100_000)
-
-  let _ = chip.register(registry, fn() { Ok(counter_1) })
-  let _ = chip.register(registry, fn() { Ok(counter_2) })
-  let _ = chip.register_as(registry, GroupA, fn() { Ok(counter_2) })
-  let _ = chip.register_as(registry, GroupB, fn() { Ok(counter_2) })
-  let _ = chip.register_as(registry, GroupB, fn() { Ok(counter_3) })
-  let _ = chip.register_as(registry, GroupB, fn() { Ok(counter_4) })
-  let _ = chip.register_as(registry, GroupC, fn() { Ok(counter_4) })
-  let _ = chip.register(registry, fn() { Ok(counter_4) })
-  let _ = chip.register(registry, fn() { Ok(counter_5) })
-
-  // So far we have...
-  let assert [_, _, _, _, _] = chip.all(registry)
-  let assert [_] = chip.lookup(registry, GroupA)
-  let assert [_, _, _] = chip.lookup(registry, GroupB)
-  let assert [_] = chip.lookup(registry, GroupC)
-
-  // Deregistering Group B removes counter 3 but not 2 or 4  
-  chip.deregister(registry, GroupB)
-  process.sleep(10)
-  let assert [_, _, _, _] = chip.all(registry)
-  let assert [_] = chip.lookup(registry, GroupA)
-  let assert [] = chip.lookup(registry, GroupB)
-  let assert [_] = chip.lookup(registry, GroupC)
-
-  // Deregistering Group A removes counter 2
-  chip.deregister(registry, GroupA)
-  process.sleep(10)
-  let assert [_, _, _] = chip.all(registry)
-  let assert [] = chip.lookup(registry, GroupA)
-  let assert [] = chip.lookup(registry, GroupB)
-  let assert [_] = chip.lookup(registry, GroupC)
-
-  // Deregistering Group C removes counter 4
-  chip.deregister(registry, GroupC)
-  process.sleep(10)
-  let assert [_, _] = chip.all(registry)
-  let assert [] = chip.lookup(registry, GroupA)
-  let assert [] = chip.lookup(registry, GroupB)
-  let assert [] = chip.lookup(registry, GroupC)
-}
-
-pub fn demonitor_test() {
-  // Start registry and register 5 counters
-  let assert Ok(registry) = chip.start()
-
-  let assert Ok(counter_1) = start_counter(10)
-  let assert Ok(counter_2) = start_counter(100)
-  let assert Ok(counter_3) = start_counter(1000)
-  let assert Ok(counter_4) = start_counter(10_000)
-  let assert Ok(counter_5) = start_counter(100_000)
-
-  let _ = chip.register(registry, fn() { Ok(counter_1) })
-  let _ = chip.register(registry, fn() { Ok(counter_2) })
-  let _ = chip.register_as(registry, GroupA, fn() { Ok(counter_2) })
-  let _ = chip.register_as(registry, GroupB, fn() { Ok(counter_2) })
-  let _ = chip.register_as(registry, GroupB, fn() { Ok(counter_3) })
-  let _ = chip.register_as(registry, GroupB, fn() { Ok(counter_4) })
-  let _ = chip.register_as(registry, GroupC, fn() { Ok(counter_4) })
-  let _ = chip.register(registry, fn() { Ok(counter_4) })
-  let _ = chip.register(registry, fn() { Ok(counter_5) })
-
-  // So far we have...
-  let assert [_, _, _, _, _] = chip.all(registry)
-  let assert [_] = chip.lookup(registry, GroupA)
-  let assert [_, _, _] = chip.lookup(registry, GroupB)
-  let assert [_] = chip.lookup(registry, GroupC)
-
-  // Stopping counter 3 removes it from the group and B subgroup
-  let assert 1000 = stop_counter(counter_3)
-  process.sleep(10)
-  let assert [_, _, _, _] = chip.all(registry)
-  let assert [_] = chip.lookup(registry, GroupA)
-  let assert [_, _] = chip.lookup(registry, GroupB)
-  let assert [_] = chip.lookup(registry, GroupC)
-
-  // Stopping counter 2 removes it from the group and A, B subgroup 
-  let assert 100 = stop_counter(counter_2)
-  process.sleep(10)
-  let assert [_, _, _] = chip.all(registry)
-  let assert [] = chip.lookup(registry, GroupA)
-  let assert [_] = chip.lookup(registry, GroupB)
-  let assert [_] = chip.lookup(registry, GroupC)
-
-  // Stopping counter 4 removes it from the group and B, C subgroup
-  let assert 10_000 = stop_counter(counter_4)
-  process.sleep(10)
-  let assert [_, _] = chip.all(registry)
-  let assert [] = chip.lookup(registry, GroupA)
-  let assert [] = chip.lookup(registry, GroupB)
-  let assert [] = chip.lookup(registry, GroupC)
-}
-
-pub fn stop_test() {
-  let assert Ok(registry) = chip.start()
-  let assert process.Normal = chip.stop(registry)
-  let assert False =
-    registry
-    |> process.subject_owner()
-    |> process.is_alive()
-}
-
-pub opaque type CounterMessage {
-  Inc
-  Current(client: process.Subject(Int))
-  Stop(client: process.Subject(Int))
-}
-
-fn start_counter(count: Int) {
-  actor.start(count, handle_count)
-}
-
-fn stop_counter(counter: process.Subject(CounterMessage)) -> Int {
-  actor.call(counter, Stop(_), 10)
-}
-
-fn handle_count(message: CounterMessage, count: Int) {
-  case message {
-    Inc -> {
-      actor.continue(count + 1)
+fn until(condition, is outcome, for milliseconds) -> Bool {
+  case milliseconds, condition() {
+    _milliseconds, result if result == outcome -> {
+      True
     }
 
-    Current(client) -> {
-      process.send(client, count)
-      actor.continue(count)
+    milliseconds, _result if milliseconds > 0 -> {
+      process.sleep(5)
+      until(condition, outcome, milliseconds - 5)
     }
 
-    Stop(client) -> {
-      process.send(client, count)
-      actor.Stop(process.Normal)
+    _milliseconds, _result -> {
+      False
     }
   }
-}
-
-fn compare(left, right) {
-  let #(l_key, _) = left
-  let #(r_key, _) = right
-
-  int.compare(l_key, r_key)
 }
