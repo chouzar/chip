@@ -13,10 +13,20 @@ It lets tag subjects under a name or group to later reference them. Will also au
 Lets assemble the pieces to build a simple counter actor:
 
 ```gleam
-pub type Message {
+import gleam/erlang/process
+import gleam/otp/actor
+
+pub opaque type Message {
   Inc
   Current(client: process.Subject(Int))
-  Stop
+}
+
+pub fn increment(counter) {
+  actor.send(counter, Inc)
+}
+
+pub fn current(counter) {
+  actor.call(counter, Current(_), 10)
 }
 
 fn loop(message: Message, count: Int) {
@@ -29,10 +39,6 @@ fn loop(message: Message, count: Int) {
       process.send(client, count)
       actor.Continue(count, option.None)
     }
-
-    Stop -> {
-      actor.Stop(process.Normal)
-    }
   }
 }
 ```
@@ -40,8 +46,8 @@ fn loop(message: Message, count: Int) {
 We start our registry and create new instances of a counter:
 
 ```gleam
-import gleam/erlang/process
-import chip
+import gleam/otp/actor
+import chip/group
 
 pub fn main() {
   let assert Ok(registry) = chip.start()
@@ -50,34 +56,35 @@ pub fn main() {
   let assert Ok(counter_2) = actor.start(2, loop)
   let assert Ok(counter_3) = actor.start(3, loop)
 
-  chip.group(registry, counter_1, "counters")
-  chip.group(registry, counter_2, "counters")
-  chip.group(registry, counter_3, "counters")
+  group.register(registry, counter_1, "counters")
+  group.register(registry, counter_2, "counters")
+  group.register(registry, counter_3, "counters")
+  
+  process.sleep_forever()
 }
 ```
 
-Later we can lookup for all subjects under the group and send messages: 
+Later, we may retrieve members for a group: 
 
 ```gleam
-chip.broadcast(registry, "counters", fn(counter) {
-  actor.send(counter, Inc)
-}) 
-
+let assert [a, b, c] = group.members(registry, GroupA)
+let assert 6 = counter.current(a) + counter.current(b) + counter.current(c)
 ```
 
-Or retrieve the current state of our subjects: 
+Or dispatch a command for each `Subject`::
 
 ```gleam
-let assert [2, 3, 4] =  
-  chip.members(registry, "counters")
-  |> list.map(process.call(_, Current(_), 10))
-  // Subject maybe be retrieved out of order so we do it explicitly
-  |> list.sort(int.compare)
+group.dispatch(registry, "counters", fn(counter) {
+  actor.increment(counter)
+}) 
+
+let assert [a, b, c] = group.members(registry, GroupA)
+let assert 9 = counter.current(a) + counter.current(b) + counter.current(c)
 ```
 
 Feature-wise this is near beign complete. Still planning to integrate: 
 
-- [ ] Modify the API to be more in-line with current elixir registry library. 
+- [ ] Modify the API to be more in-line with other Registry libraries like elixir's Registry, erlang's pg or Syn. 
 - [ ] Generally improve performance and memory consumption by running benchmarks. 
 - [ ] Document guides and use-cases, make test cases more readable. 
 - [X] Should play well with gleam style of supervisors. 
