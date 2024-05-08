@@ -1,4 +1,4 @@
-//// This module helps group different subjects under a name to later reference or broadcast messages to them. 
+//// This module helps group different `Subject`s under a name to later reference or broadcast messages to them. 
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{

@@ -1,6 +1,4 @@
-////Chip is a gleam process registry that plays along the [Gleam Erlang](https://hexdocs.pm/gleam_erlang/) `Subject` type. 
-////
-////It lets tag subjects under a name or group to later reference them. Will also automatically delist dead processes.
+//// This module helps tag `Subject`s under a name to later reference them. 
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{
