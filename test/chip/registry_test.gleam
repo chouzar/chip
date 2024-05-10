@@ -1,3 +1,7 @@
+//// assert we can retrieve individual subjects
+//// assert we're not able to retrieve non-registered subjects
+//// assert subject is restarted by the supervisor after actor dies
+
 import chip/registry
 import counter
 import gleam/erlang/process
@@ -69,25 +73,73 @@ pub fn subject_eventually_deregisters_after_process_dies_test() {
 }
 
 pub fn registering_works_along_supervisor_test() {
-  let assert Ok(registry) = registry.start()
-  let registry: Registry = registry
+  let self = process.new_subject()
 
-  // for each child the supervisor will increment the name and count
-  let children = fn(children) {
-    children
-    |> supervisor.add(child_spec(registry))
-    |> supervisor.add(child_spec(registry))
-    |> supervisor.add(child_spec(registry))
+  let child_spec_registry = fn() {
+    // the registry will be spawned and will send its subject to current process
+    let start = fn(_param) {
+      use registry <- result.try(registry.start())
+      process.send(self, registry)
+      Ok(registry)
+    }
+
+    // for subsequent calls pass-on the registry  
+    let updater = fn(_param, registry) { registry }
+
+    // compose the start and updater into a child spec for the supervisor
+    supervisor.worker(start)
+    |> supervisor.returning(updater)
+  }
+
+  let child_spec_counter = fn() {
+    // then counter will be spawned and registered
+    let start = fn(param) {
+      let #(registry, id) = param
+      let initial_count = id
+      let name = "counter-" <> int.to_string(id)
+
+      use counter <- result.try(counter.start(initial_count))
+      let Nil = registry.register(registry, counter, name)
+      Ok(counter)
+    }
+
+    // for subsequent calls pass-on the registry and increment the id 
+    let updater = fn(param, _subject) {
+      let #(registry, id) = param
+      #(registry, id + 1)
+    }
+
+    // compose the start and updater into a child spec for the supervisor
+    supervisor.worker(start)
+    |> supervisor.returning(updater)
   }
 
   // start the supervisor
   let assert Ok(_supervisor) =
-    supervisor.start_spec(supervisor.Spec(
-      argument: 1,
-      frequency_period: 1,
-      max_frequency: 5,
-      init: children,
-    ))
+    supervisor.start(fn(children) {
+      children
+      |> supervisor.add(child_spec_registry())
+      |> supervisor.add(
+        supervisor.supervisor(fn(registry) {
+          supervisor.start_spec(
+            supervisor.Spec(
+              argument: #(registry, 1),
+              max_frequency: 5,
+              frequency_period: 1,
+              init: fn(children) {
+                children
+                |> supervisor.add(child_spec_counter())
+                |> supervisor.add(child_spec_counter())
+                |> supervisor.add(child_spec_counter())
+              },
+            ),
+          )
+        }),
+      )
+    })
+
+  // wait for the registry to initialize and send back its Subject
+  let assert Ok(registry) = process.receive(self, 50)
 
   // assert we can retrieve individual subjects
   let assert Ok(counter_1) = registry.find(registry, "counter-1")
@@ -124,25 +176,6 @@ pub fn main() {
 
 type Registry =
   process.Subject(registry.Message(String, counter.Message))
-
-fn child_spec(registry) {
-  // an actor will be spawned and immediately registered after success
-  let start = fn(id) {
-    let initial_count = id
-    let name = "counter-" <> int.to_string(id)
-
-    use subject <- result.try(counter.start(initial_count))
-    let Nil = registry.register(registry, subject, name)
-    Ok(subject)
-  }
-
-  // increment each registration by 1 in the supervisor
-  let updater = fn(id, _subject) { id + 1 }
-
-  // compose the updater and start function into a spec for the supervisor
-  supervisor.worker(start)
-  |> supervisor.returning(updater)
-}
 
 fn until(condition, is outcome, for milliseconds) -> Bool {
   case milliseconds, condition() {
