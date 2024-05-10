@@ -1,4 +1,4 @@
-//// This module helps group different `Subject`s under a name to later reference or broadcast messages to them. 
+//// This is a local process registry that groups Subjects under a name to later reference or broadcast messages to them.
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{
@@ -76,7 +76,7 @@ pub fn start() -> Result(Registry(group, msg), actor.StartError) {
   ))
 }
 
-/// Registers a `Subject` under a shared name. 
+/// Registers a Subject under a shared name. 
 /// 
 /// ## Example
 /// 
@@ -92,7 +92,7 @@ pub fn register(
   process.send(registry, GroupedRegistrant(subject, group))
 }
 
-/// Looks up `Subject`s under a named group.
+/// Looks up Subjects under a named group.
 /// 
 /// ### Example
 /// 
@@ -104,7 +104,7 @@ pub fn members(registry, group) -> List(Subject(msg)) {
   process.call(registry, GroupedSubjects(_, group), 10)
 }
 
-/// Executes a callback for all `Subject`s under a named group.
+/// Executes a callback for all Subjects under a named group.
 /// 
 /// ### Example
 /// 

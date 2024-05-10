@@ -1,4 +1,4 @@
-//// This module helps tag `Subject`s under a name to later reference them. 
+//// This is a local process registry that individually tags Subjects for later reference.
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{
@@ -63,7 +63,7 @@ pub fn start() -> Result(Registry(name, msg), actor.StartError) {
   ))
 }
 
-/// Registers a `Subject` under a unique name. 
+/// Registers a Subject under a unique name. 
 /// 
 /// ## Example
 /// 
@@ -79,7 +79,7 @@ pub fn register(
   process.send(registry, Registrant(subject, name))
 }
 
-/// Looks up a uniquely named `Subject`.
+/// Looks up a uniquely named Subject.
 /// 
 /// ### Example
 /// 

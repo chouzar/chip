@@ -4,7 +4,7 @@
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
 
-Chip is a gleam process registry that plays along the [Gleam Erlang](https://hexdocs.pm/gleam_erlang/) `Subject` type. 
+A local process registry that plays along Gleam's [Subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) type.  
 
 It lets tag subjects under a name or group to later reference them. Will also automatically delist dead processes.
 
@@ -67,18 +67,18 @@ pub fn main() {
 Later, we may retrieve members for a group: 
 
 ```gleam
-let assert [a, b, c] = group.members(registry, GroupA)
+let assert [a, b, c] = group.members(registry, "counters")
 let assert 6 = counter.current(a) + counter.current(b) + counter.current(c)
 ```
 
-Or dispatch a command for each `Subject`::
+Or broadcast a message to each Subject:
 
 ```gleam
 group.dispatch(registry, "counters", fn(counter) {
   actor.increment(counter)
 }) 
 
-let assert [a, b, c] = group.members(registry, GroupA)
+let assert [a, b, c] = group.members(registry, "counters")
 let assert 9 = counter.current(a) + counter.current(b) + counter.current(c)
 ```
 
