@@ -1,5 +1,4 @@
 import chat/client
-import chat/event
 import chat/pubsub
 import chat/server
 import gleam/erlang/process

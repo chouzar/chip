@@ -16,7 +16,7 @@ pub fn subscribe(
   group.register(pubsub, subject, Nil)
 }
 
-pub fn broadcast(pubsub: PubSub(message), message: message) -> Nil {
+pub fn publish(pubsub: PubSub(message), message: message) -> Nil {
   group.dispatch(pubsub, Nil, fn(subscriber) {
     process.send(subscriber, message)
   })

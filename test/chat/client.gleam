@@ -1,4 +1,3 @@
-import chat/event.{type Message}
 import chat/server
 import gleam/erlang/process
 import gleam/function
@@ -9,6 +8,12 @@ import gleam/otp/actor
 
 pub type Client =
   process.Subject(Message)
+
+pub opaque type Message {
+  Send(message: String)
+  Receive(event: Event)
+  Chat(client: process.Subject(List(String)))
+}
 
 // TODO: We just need the Receive constructor to be separate
 type State {
