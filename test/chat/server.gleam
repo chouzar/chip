@@ -22,17 +22,26 @@ pub fn childspec(caller: process.Subject(Server)) {
   })
 }
 
-pub fn connect(server: Server, client: process.Subject(event.Event)) -> Nil {
-  actor.send(server, Connect(client))
+pub fn connect(
+  server: Server,
+  client: process.Subject(event.Event),
+  channel: pubsub.Channel,
+) -> Nil {
+  actor.send(server, Connect(client, channel))
 }
 
-pub fn send(server: Server, user: String, message: String) -> Nil {
-  actor.send(server, Send(user, message))
+pub fn send(
+  server: Server,
+  channel: pubsub.Channel,
+  user: String,
+  message: String,
+) -> Nil {
+  actor.send(server, Send(channel, user, message))
 }
 
 pub opaque type Message {
-  Connect(client: process.Subject(event.Event))
-  Send(user: String, message: String)
+  Connect(client: process.Subject(event.Event), channel: pubsub.Channel)
+  Send(channel: pubsub.Channel, user: String, message: String)
 }
 
 type State {
@@ -46,16 +55,16 @@ fn init(pubsub: pubsub.PubSub) {
 
 fn loop(message: Message, state: State) {
   case message {
-    Connect(client) -> {
-      pubsub.subscribe(state.pubsub, client)
+    Connect(client, channel) -> {
+      pubsub.subscribe(state.pubsub, channel, client)
       actor.Continue(state, option.None)
     }
 
-    Send(user, message) -> {
+    Send(channel, user, message) -> {
       let event = event.next(state.chat, user, message)
       let chat = [event, ..state.chat]
 
-      pubsub.publish(state.pubsub, event)
+      pubsub.publish(state.pubsub, channel, event)
       let state = State(..state, chat: chat)
       actor.Continue(state, option.None)
     }

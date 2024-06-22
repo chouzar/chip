@@ -1,4 +1,5 @@
 import chat/event
+import chat/pubsub
 import chat/server
 import chat/supervisor as chat_supervisor
 import gleam/erlang/process
@@ -12,16 +13,25 @@ pub fn chat_test() {
   let assert Ok(server) = process.receive(caller, 100)
 
   // For this scenario, out of simplicity, the client is the current process.
-  let client: Client = process.new_subject()
+  let client_a: Client = process.new_subject()
+  let client_b: Client = process.new_subject()
 
   // Connect the client so it can receive new messages from the server.
-  server.connect(server, client)
+  server.connect(server, client_a, pubsub.General)
+  server.connect(server, client_b, pubsub.Coffee)
+  server.connect(server, client_b, pubsub.Pets)
 
   task.async(fn() {
     // Send messages from another Subject.
-    server.send(server, "luis", "Hola Juan.")
-    server.send(server, "juan", "Hola Luis, como vas?")
-    server.send(server, "luis", "Bien! Recibiendo mensajes.")
+    server.send(server, pubsub.Coffee, "roberto", "Hey!")
+    server.send(server, pubsub.General, "luis", "Hola Juan.")
+    server.send(server, pubsub.Coffee, "roberto", "Busco recetas para café.")
+    server.send(server, pubsub.General, "juan", "Hola Luis, como vas?")
+    server.send(server, pubsub.Coffee, "francisco", "¿Qué método?")
+    server.send(server, pubsub.Pets, "roberto", "Mi gato 🐈 ♡")
+    server.send(server, pubsub.General, "luis", "Bien! Recibiendo mensajes.")
+    server.send(server, pubsub.Pets, "anonymous", "owwww! ♡ ♡ ♡")
+    server.send(server, pubsub.Coffee, "roberto", "Para dripper.")
   })
 
   // Client should have received the messages
@@ -29,7 +39,17 @@ pub fn chat_test() {
     "luis: Hola Juan.",
     "juan: Hola Luis, como vas?",
     "luis: Bien! Recibiendo mensajes.",
-  ] = wait_for_messages(client, [])
+  ] = wait_for_messages(client_a, [])
+
+  // Client should have received the messages
+  let assert [
+    "roberto: Hey!",
+    "roberto: Busco recetas para café.",
+    "francisco: ¿Qué método?",
+    "roberto: Mi gato 🐈 ♡",
+    "anonymous: owwww! ♡ ♡ ♡",
+    "roberto: Para dripper.",
+  ] = wait_for_messages(client_b, [])
 }
 
 // Client helpers

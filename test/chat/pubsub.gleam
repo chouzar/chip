@@ -5,10 +5,9 @@ import gleam/otp/actor
 import gleam/otp/supervisor
 
 pub type PubSub =
-  process.Subject(group.Message(Nil, event.Event))
+  process.Subject(group.Message(Channel, event.Event))
 
-// TODO: Maybe do channels for a more complex use case
-type Channel {
+pub type Channel {
   General
   Coffee
   Pets
@@ -23,12 +22,16 @@ pub fn childspec() {
   |> supervisor.returning(fn(_param, pubsub) { pubsub })
 }
 
-pub fn subscribe(pubsub: PubSub, subject: process.Subject(event.Event)) -> Nil {
-  group.register(pubsub, subject, Nil)
+pub fn subscribe(
+  pubsub: PubSub,
+  channel: Channel,
+  subject: process.Subject(event.Event),
+) -> Nil {
+  group.register(pubsub, subject, channel)
 }
 
-pub fn publish(pubsub: PubSub, message: event.Event) -> Nil {
-  group.dispatch(pubsub, Nil, fn(subscriber) {
+pub fn publish(pubsub: PubSub, channel: Channel, message: event.Event) -> Nil {
+  group.dispatch(pubsub, channel, fn(subscriber) {
     process.send(subscriber, message)
   })
 }
