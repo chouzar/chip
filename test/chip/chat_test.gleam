@@ -1,40 +1,52 @@
-import chat/pubsub
+import chat/event
 import chat/server
+import chat/supervisor as chat_supervisor
 import gleam/erlang/process
 import gleam/list
+import gleam/otp/task
 
 pub fn chat_test() {
-  // Good Example to start the supervision example maybe is to do it without.
-  // Another good example is order dependency vs inheritance.
-  let assert Ok(pubsub) = pubsub.start()
-  let assert Ok(server) = server.start(pubsub)
+  // Start the chat's supervision tree and retrieve the server.
+  let caller: process.Subject(server.Server) = process.new_subject()
+  let assert Ok(_supervisor) = chat_supervisor.start(caller)
+  let assert Ok(server) = process.receive(caller, 100)
 
-  let self: pubsub.Client = process.new_subject()
+  // For this scenario, out of simplicity, the client is the current process.
+  let client: Client = process.new_subject()
 
-  server.connect(server, self)
+  // Connect the client so it can receive new messages from the server.
+  server.connect(server, client)
 
-  server.send(server, "luis", "Hola Juan")
-  server.send(server, "juan", "Hola Luis, como vas?")
-  server.send(server, "luis", "Bien! Estas recibiendo mensajes")
+  task.async(fn() {
+    // Send messages from another Subject.
+    server.send(server, "luis", "Hola Juan.")
+    server.send(server, "juan", "Hola Luis, como vas?")
+    server.send(server, "luis", "Bien! Recibiendo mensajes.")
+  })
 
+  // Client should have received the messages
   let assert [
-    "luis: Hola Juan",
+    "luis: Hola Juan.",
     "juan: Hola Luis, como vas?",
-    "luis: Bien! Estas recibiendo mensajes",
-  ] = wait_for_messages(self, [])
+    "luis: Bien! Recibiendo mensajes.",
+  ] = wait_for_messages(client, [])
 }
 
+// Client helpers
 
-fn wait_for_messages(
-  subject: process.Subject(pubsub.Event),
-  messages: List(String),
-) -> List(String) {
-  case process.receive(subject, 100) {
-    Ok(event) ->
-      event
-      |> build_message()
+type Client =
+  process.Subject(event.Event)
+
+fn wait_for_messages(client: Client, messages: List(String)) -> List(String) {
+  let selector =
+    process.new_selector()
+    |> process.selecting(client, build_message)
+
+  case process.select(selector, 100) {
+    Ok(message) ->
+      message
       |> list.prepend(messages, _)
-      |> wait_for_messages(subject, _)
+      |> wait_for_messages(client, _)
 
     Error(Nil) ->
       messages
@@ -42,6 +54,6 @@ fn wait_for_messages(
   }
 }
 
-fn build_message(event: pubsub.Event) -> String {
+fn build_message(event: event.Event) -> String {
   event.user <> ": " <> event.message
 }
