@@ -160,6 +160,7 @@ type Registry(msg, tag, group) =
 
 pub opaque type Message(msg, tag, group) {
   Register(Registrant(msg, tag, group))
+  Deregister(process.
   Demonitor(process.ProcessMonitor, process.Pid, Registrant(msg, tag, group))
   Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
   Members(process.Subject(List(process.Subject(msg))))
@@ -177,7 +178,9 @@ pub opaque type Registrant(msg, tag, group) {
 type State(msg, tag, group) {
   State(
     // Keeps track of registered pids to understand when to add a new monitor down selector.
-    registration: Set(process.Pid),
+    registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
+    // Keeps track of monitors to de-register once.
+    monitoring: Set(process.ProcessMonitor),
     // Store for all registered subjects.
     registered: Set(process.Subject(msg)),
     // Store for all tagged subjects. 
