@@ -4,14 +4,11 @@
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process
+import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/set.{type Set}
-
-pub fn main() {
-  todo
-}
 
 // API ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
@@ -100,50 +97,6 @@ pub fn register(
   process.send(registry, Register(registrant))
 }
 
-// Retrieves all tags on the registry.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// let assert Ok(registry) = chip.start()
-/// 
-/// let assert [_tag, ..tags] = chip.tags(registry)
-/// ```
-pub fn tags(registry: Registry(msg, tag, group)) -> List(tag) {
-  // TODO: May be obtained from ETS directly
-  todo
-}
-
-/// Retrieves all groups on the registry.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// let assert Ok(registry) = chip.start()
-/// 
-/// let assert [_group, ..groups] = chip.groups(registry)
-/// ```
-pub fn groups(registry: Registry(msg, tag, group)) -> List(group) {
-  // TODO: May be obtained from ETS directly
-  todo
-}
-
-/// TODO: Should this function be a dispatch?
-/// Retrieves all registered subjects.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// let assert [subject, ..subjects] = chip.groups(registry)
-/// ```
-pub fn registered(
-  registry: Registry(msg, tag, group),
-) -> List(process.Subject(msg)) {
-  // TODO: May be obtained from ETS directly
-  todo
-}
-
-/// TODO: Should this function be renamed to lookup?
 /// Retrieves a tagged subject.
 /// 
 /// ## Example
@@ -151,43 +104,52 @@ pub fn registered(
 /// ```gleam
 /// let assert Ok(subject) = chip.tagged(registry, "Luis")
 /// ```
-pub fn tagged(
+pub fn lookup(
   registry: Registry(msg, tag, group),
   tag,
 ) -> Result(process.Subject(msg), Nil) {
   // TODO: May be obtained from ETS directly
-  todo
+  process.call(registry, Lookup(_, tag), 10)
 }
 
-/// TODO: Should this function be a dispatch_group?
-/// Retrieves subjects under a group.
+/// Applies a callback over all registered Subjects.
 /// 
 /// ## Example
 /// 
 /// ```gleam
-/// let assert [subject, ..subjects] = chip.grouped(registry, Coffee)
-/// ```
-pub fn grouped(
-  registry: Registry(msg, tag, group),
-  group,
-) -> List(process.Subject(msg)) {
-  // TODO: May be obtained from ETS directly
-  todo
-}
-
-/// A helper function that will apply a callback over a list of Subjects.
-/// 
-/// ## Example
-/// 
-/// ```gleam
-/// group.dispatch(subjects, fn(subject) { 
-///   process.send(subject, Message(data))
+/// chip.dispatch(registry, fn(subject) { 
+///   process.send(subject, message)
 /// })
 /// ```
 pub fn dispatch(
-  subjects: List(process.Subject(msg)),
+  registry: Registry(msg, tag, group),
   callback: fn(process.Subject(msg)) -> x,
 ) -> Nil {
+  // TODO: May be obtained from ETS directly
+  let subjects = process.call(registry, Members(_), 10)
+  list.each(subjects, callback)
+}
+
+/// Applies a callback over a group.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// chip.dispatch_to(registry, Pets, fn(subject) { 
+///   process.send(subject, message)
+/// })
+/// ```
+pub fn dispatch_to(
+  registry: Registry(msg, tag, group),
+  group: group,
+  callback: fn(process.Subject(msg)) -> x,
+) -> Nil {
+  let subjects = process.call(registry, MembersAt(_, group), 10)
+  list.each(subjects, callback)
+}
+
+/// Returns registry datapoints.
+pub fn info(registry: Registry(msg, tag, group)) {
   todo
 }
 
@@ -198,8 +160,10 @@ type Registry(msg, tag, group) =
 
 pub opaque type Message(msg, tag, group) {
   Register(Registrant(msg, tag, group))
-  // TODO: If demonitoring executes 1 time only the PID here is not necessary.
   Demonitor(process.ProcessMonitor, process.Pid, Registrant(msg, tag, group))
+  Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
+  Members(process.Subject(List(process.Subject(msg))))
+  MembersAt(process.Subject(List(process.Subject(msg))), group)
 }
 
 pub opaque type Registrant(msg, tag, group) {
@@ -212,9 +176,8 @@ pub opaque type Registrant(msg, tag, group) {
 
 type State(msg, tag, group) {
   State(
-    // This keeps track of registered subjects and where to look for them on de-registration.
-    // TODO: If demonitoring executes 1 time only this is not necessary.
-    registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
+    // Keeps track of registered pids to understand when to add a new monitor down selector.
+    registration: Set(process.Pid),
     // Store for all registered subjects.
     registered: Set(process.Subject(msg)),
     // Store for all tagged subjects. 
@@ -245,77 +208,86 @@ fn loop(
       let selection = monitor(registrant)
 
       state
+      |> into_registration(registrant)
       |> into_registered(registrant)
       |> into_tagged(registrant)
       |> into_grouped(registrant)
       |> actor.Continue(selection)
     }
 
-    Demonitor(monitor, pid, registrant) -> {
-      // TODO: Check if demonitoring executes 1 time only because of multiple 
-      // registrations.
+    Demonitor(monitor,  registrant) as event -> {
+      io.debug(event)
+      // TODO: Instead of checking the pid, check the monitor at the index
+      // But probably best idea to restore the single selection.
       process.demonitor_process(monitor)
 
       state
+      |> remove_from_registration(registrant)
       |> remove_from_registered(registrant)
       |> remove_from_tagged(registrant)
       |> remove_from_grouped(registrant)
       |> actor.Continue(option.None)
     }
+
+    Lookup(client, tag) -> {
+      let result = dict.get(state.tagged, tag)
+      process.send(client, result)
+      actor.Continue(state, option.None)
+    }
+
+    Members(client) -> {
+      let subjects = set.to_list(state.registered)
+      process.send(client, subjects)
+      actor.Continue(state, option.None)
+    }
+
+    MembersAt(client, group) -> {
+      let subjects = case dict.get(state.grouped, group) {
+        Ok(subjects) -> set.to_list(subjects)
+        Error(Nil) -> []
+      }
+
+      process.send(client, subjects)
+      actor.Continue(state, option.None)
+    }
   }
 }
 
-// //fn monitor(
-// //  registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
-// //  registrant: Registrant(msg, tag, group),
-// //) -> option.Option(process.Selector(Message(msg, tag, group))) {
-// //    // TODO: If demonitoring executes 1 time only this is not necessary.
-// //  // Check if this process is already registered.
-// //  let pid = process.subject_owner(registrant.subject)
-// //
-// //  case dict.get(registration, pid) {
-// //    Ok(_locations) -> {
-// //      // When process is already registered do nothing.
-// //      option.None
-// //    }
-// //
-// //    Error(Nil) -> {
-// //      // When it is a new process, monitor it.
-// //      let monitor = process.monitor_process(pid)
-// //      let handle = fn(_: process.ProcessDown) {
-// //        // This keeps track of registered subjects and where to look for them on de-registration.
-// //        Demonitor(monitor, pid, monitor)
-// //      }
-// //
-// //      option.Some(
-// //        process.new_selector()
-// //        |> process.selecting_process_down(monitor, handle),
-// //      )
-// //    }
-// //  }
-// //}
-
 fn monitor(
+  registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
   registrant: Registrant(msg, tag, group),
 ) -> option.Option(process.Selector(Message(msg, tag, group))) {
+  // Check if this process is already registered.
   let pid = process.subject_owner(registrant.subject)
-  let monitor = process.monitor_process(pid)
-  let on_process_down = fn(_: process.ProcessDown) {
-    // This keeps track of registered subjects and where to look for them on de-registration.
-    Demonitor(monitor, pid, registrant)
-  }
 
-  option.Some(
-    process.new_selector()
-    |> process.selecting_process_down(monitor, on_process_down),
-  )
+  case set.contains(registration, pid) {
+    True -> {
+      // When process is already registered do nothing.
+      option.None
+    }
+
+    False -> {
+      // When it is a new process, monitor it.
+      let monitor = process.monitor_process(pid)
+      let on_process_down = fn(_: process.ProcessDown) {
+        // This keeps track of registered subjects and where to look for them on de-registration.
+        Demonitor(monitor, pid, registrant)
+      }
+
+      option.Some(
+        process.new_selector()
+        |> process.selecting_process_down(monitor, on_process_down),
+      )
+    }
+  }
 }
 
 fn into_registration(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
-  todo
+  let pid = process.subject_owner(registrant.subject)
+  State(..state, registration: set.insert(state.registration, pid))
 }
 
 fn into_registered(
@@ -371,21 +343,33 @@ fn remove_from_registration(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
-  todo
+  let pid = process.subject_owner(registrant.subject)
+  let registration = set.delete(state.registration, pid)
+  State(..state, registration: registration)
 }
 
 fn remove_from_registered(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
-  todo
+  let registered = set.delete(state.registered, registrant.subject)
+  State(..state, registered: registered)
 }
 
 fn remove_from_tagged(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
-  todo
+  case registrant {
+   Registrant(tag: option.Some(tag), ..) -> {
+    let tagged = dict.delete(state.tagged, tag)
+    State(..state, tagged: tagged)
+   }
+   
+   Registrant(tag: option.None, ..) -> {
+     state 
+   }  
+  }
 }
 
 fn remove_from_grouped(
