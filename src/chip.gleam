@@ -190,7 +190,7 @@ type State(msg, tag, group) {
 fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) {
   actor.Ready(
     State(
-      registration: dict.new(),
+      registration: set.new(),
       registered: set.new(),
       tagged: dict.new(),
       grouped: dict.new(),
@@ -205,7 +205,7 @@ fn loop(
 ) -> actor.Next(Message(msg, tag, group), State(msg, tag, group)) {
   case message {
     Register(registrant) -> {
-      let selection = monitor(registrant)
+      let selection = monitor(state.registration, registrant)
 
       state
       |> into_registration(registrant)
@@ -215,7 +215,7 @@ fn loop(
       |> actor.Continue(selection)
     }
 
-    Demonitor(monitor,  registrant) as event -> {
+    Demonitor(monitor, pid, registrant) as event -> {
       io.debug(event)
       // TODO: Instead of checking the pid, check the monitor at the index
       // But probably best idea to restore the single selection.
@@ -254,7 +254,7 @@ fn loop(
 }
 
 fn monitor(
-  registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
+  registration: Set(process.Pid),
   registrant: Registrant(msg, tag, group),
 ) -> option.Option(process.Selector(Message(msg, tag, group))) {
   // Check if this process is already registered.
@@ -361,14 +361,14 @@ fn remove_from_tagged(
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
   case registrant {
-   Registrant(tag: option.Some(tag), ..) -> {
-    let tagged = dict.delete(state.tagged, tag)
-    State(..state, tagged: tagged)
-   }
-   
-   Registrant(tag: option.None, ..) -> {
-     state 
-   }  
+    Registrant(tag: option.Some(tag), ..) -> {
+      let tagged = dict.delete(state.tagged, tag)
+      State(..state, tagged: tagged)
+    }
+
+    Registrant(tag: option.None, ..) -> {
+      state
+    }
   }
 }
 
