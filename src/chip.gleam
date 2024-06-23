@@ -160,8 +160,7 @@ type Registry(msg, tag, group) =
 
 pub opaque type Message(msg, tag, group) {
   Register(Registrant(msg, tag, group))
-  Deregister(process.
-  Demonitor(process.ProcessMonitor, process.Pid, Registrant(msg, tag, group))
+  Demonitor(process.ProcessMonitor, process.Pid)
   Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
   Members(process.Subject(List(process.Subject(msg))))
   MembersAt(process.Subject(List(process.Subject(msg))), group)
@@ -179,8 +178,6 @@ type State(msg, tag, group) {
   State(
     // Keeps track of registered pids to understand when to add a new monitor down selector.
     registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
-    // Keeps track of monitors to de-register once.
-    monitoring: Set(process.ProcessMonitor),
     // Store for all registered subjects.
     registered: Set(process.Subject(msg)),
     // Store for all tagged subjects. 
@@ -193,7 +190,7 @@ type State(msg, tag, group) {
 fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) {
   actor.Ready(
     State(
-      registration: set.new(),
+      registration: dict.new(),
       registered: set.new(),
       tagged: dict.new(),
       grouped: dict.new(),
@@ -218,17 +215,14 @@ fn loop(
       |> actor.Continue(selection)
     }
 
-    Demonitor(monitor, pid, registrant) as event -> {
+    Demonitor(monitor, pid) as event -> {
       io.debug(event)
       // TODO: Instead of checking the pid, check the monitor at the index
       // But probably best idea to restore the single selection.
       process.demonitor_process(monitor)
 
       state
-      |> remove_from_registration(registrant)
-      |> remove_from_registered(registrant)
-      |> remove_from_tagged(registrant)
-      |> remove_from_grouped(registrant)
+      |> remove_registration(pid)
       |> actor.Continue(option.None)
     }
 
@@ -257,24 +251,24 @@ fn loop(
 }
 
 fn monitor(
-  registration: Set(process.Pid),
+  registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
   registrant: Registrant(msg, tag, group),
 ) -> option.Option(process.Selector(Message(msg, tag, group))) {
   // Check if this process is already registered.
   let pid = process.subject_owner(registrant.subject)
 
-  case set.contains(registration, pid) {
-    True -> {
+  case dict.get(registration, pid) {
+    Ok(_registrants) -> {
       // When process is already registered do nothing.
       option.None
     }
 
-    False -> {
+    Error(Nil) -> {
       // When it is a new process, monitor it.
       let monitor = process.monitor_process(pid)
       let on_process_down = fn(_: process.ProcessDown) {
         // This keeps track of registered subjects and where to look for them on de-registration.
-        Demonitor(monitor, pid, registrant)
+        Demonitor(monitor, pid)
       }
 
       option.Some(
@@ -289,8 +283,16 @@ fn into_registration(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
+  let add_registrant = fn(option) {
+    case option {
+      option.Some(registrants) -> registrants |> set.insert(registrant)
+      option.None -> set.new() |> set.insert(registrant)
+    }
+  }
+
   let pid = process.subject_owner(registrant.subject)
-  State(..state, registration: set.insert(state.registration, pid))
+  let registration = dict.update(state.registration, pid, add_registrant)
+  State(..state, registration: registration)
 }
 
 fn into_registered(
@@ -342,12 +344,31 @@ fn into_grouped(
   }
 }
 
+fn remove_registration(
+  state: State(msg, tag, group),
+  pid: process.Pid,
+) -> State(msg, tag, group) {
+  let registrants = case dict.get(state.registration, pid) {
+    Ok(registrants) -> set.to_list(registrants)
+    // TODO: Impossible state
+    Error(Nil) -> []
+  }
+
+  list.fold(registrants, state, fn(state, registrant) {
+    state
+    |> remove_from_registration(registrant)
+    |> remove_from_registered(registrant)
+    |> remove_from_tagged(registrant)
+    |> remove_from_grouped(registrant)
+  })
+}
+
 fn remove_from_registration(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
   let pid = process.subject_owner(registrant.subject)
-  let registration = set.delete(state.registration, pid)
+  let registration = dict.delete(state.registration, pid)
   State(..state, registration: registration)
 }
 
@@ -379,5 +400,24 @@ fn remove_from_grouped(
   state: State(msg, tag, group),
   registrant: Registrant(msg, tag, group),
 ) -> State(msg, tag, group) {
-  todo
+  case registrant {
+    Registrant(group: option.Some(group), ..) -> {
+      case dict.get(state.grouped, group) {
+        Ok(subjects) -> {
+          let subjects = set.delete(subjects, registrant.subject)
+          let grouped = dict.insert(state.grouped, group, subjects)
+          State(..state, grouped: grouped)
+        }
+
+        Error(Nil) -> {
+          // TODO: Impossible state
+          state
+        }
+      }
+    }
+
+    Registrant(group: option.None, ..) -> {
+      state
+    }
+  }
 }
