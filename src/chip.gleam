@@ -234,7 +234,7 @@ fn loop(
       actor.Continue(state, option.Some(state.selector))
     }
 
-    Demonitor(monitor, registrant) as event -> {
+    Demonitor(monitor, registrant) -> {
       process.demonitor_process(monitor)
 
       state
