@@ -1,11 +1,11 @@
 import chat/event
-import chip/group
+import chip
 import gleam/erlang/process
 import gleam/otp/actor
 import gleam/otp/supervisor
 
 pub type PubSub =
-  process.Subject(group.Message(Channel, event.Event))
+  chip.Registry(event.Event, Nil, Channel)
 
 pub type Channel {
   General
@@ -14,7 +14,7 @@ pub type Channel {
 }
 
 pub fn start() -> Result(PubSub, actor.StartError) {
-  group.start()
+  chip.start()
 }
 
 pub fn childspec() {
@@ -27,11 +27,13 @@ pub fn subscribe(
   channel: Channel,
   subject: process.Subject(event.Event),
 ) -> Nil {
-  group.register(pubsub, subject, channel)
+  chip.new(subject)
+  |> chip.group(channel)
+  |> chip.register(pubsub, _)
 }
 
 pub fn publish(pubsub: PubSub, channel: Channel, message: event.Event) -> Nil {
-  group.dispatch(pubsub, channel, fn(subscriber) {
+  chip.dispatch_group(pubsub, channel, fn(subscriber) {
     process.send(subscriber, message)
   })
 }

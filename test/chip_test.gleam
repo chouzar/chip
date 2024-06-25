@@ -11,20 +11,18 @@ import gleeunit
 pub fn can_retrieve_individual_subjects_test() {
   let assert Ok(registry) = chip.start()
 
-  let subject_1: process.Subject(Nil) = process.new_subject()
-  let subject_2: process.Subject(Nil) = process.new_subject()
-  let subject_3: process.Subject(Nil) = process.new_subject()
+  let self: process.Subject(Nil) = process.new_subject()
 
-  chip.new(subject_1) |> chip.tag(1) |> chip.register(registry, _)
-  chip.new(subject_2) |> chip.tag(2) |> chip.register(registry, _)
-  chip.new(subject_2) |> chip.tag(3) |> chip.register(registry, _)
+  chip.new(self) |> chip.tag(1) |> chip.register(registry, _)
+  chip.new(self) |> chip.tag(2) |> chip.register(registry, _)
+  chip.new(self) |> chip.tag(3) |> chip.register(registry, _)
 
   let assert Ok(_subject) = chip.find(registry, 1)
   let assert Ok(_subject) = chip.find(registry, 2)
   let assert Ok(_subject) = chip.find(registry, 3)
 }
 
-pub fn cannot_retrieve_subject_if_not_registered() {
+pub fn cannot_retrieve_subject_if_not_registered_test() {
   let assert Ok(registry) = chip.start()
 
   let assert Error(Nil) = chip.find(registry, "nothing")
@@ -36,7 +34,6 @@ pub fn dispatch_is_applied_over_subjects_test() {
   let assert Ok(registry) = chip.start()
   let registry: chip.Registry(counter.Message, Int, Group) = registry
 
-  
   let assert Ok(counter_1) = counter.start(1)
   let assert Ok(counter_2) = counter.start(2)
   let assert Ok(counter_3) = counter.start(3)
@@ -220,9 +217,6 @@ pub fn registering_works_along_supervisor_test() {
 pub fn main() {
   gleeunit.main()
 }
-
-type Registry =
-  process.Subject(chip.Message(counter.Message, Int, Group))
 
 type Group {
   GroupA
