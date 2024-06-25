@@ -191,8 +191,6 @@ pub opaque type Chip(msg, tag, group) {
 
 type State(msg, tag, group) {
   State(
-    // Keeps track of monitors to understand when to de-register a process.
-    monitoring: Set(process.ProcessMonitor),
     // A copy of the actor's internal selector, useful to track new monitor down messages.
     selector: process.Selector(Message(msg, tag, group)),
     // Store for all registered subjects.
@@ -209,7 +207,6 @@ fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) 
 
   actor.Ready(
     State(
-      monitoring: set.new(),
       selector: selector,
       registered: set.new(),
       tagged: dict.new(),
