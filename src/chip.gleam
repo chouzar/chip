@@ -1,6 +1,6 @@
 //// Chip is a local process registry that plays along with Gleam's `Subject` type for referencing
-//// erlang processes. It can hold to a set of subjects to later reference them and dispatch 
-//// messages individually or as a group. Will also automatically delist dead processes.
+//// erlang processes. It can hold to a set of subjects to later reference individually or dispatch 
+//// a callback as a group. Will also automatically delist dead processes.
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process
@@ -9,6 +9,28 @@ import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/set.{type Set}
+
+/// An shorter alias for the registry's Subject. 
+/// 
+/// Sometimes, when building out your system it may be useful to state the Registry's types.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// let assert Ok(registry) = chip.start()
+/// let registry: chip.Registry(Event, Id, Topic)
+/// ```
+/// 
+/// Which is equivalent to: 
+/// 
+/// ```gleam
+/// let assert Ok(registry) = chip.start()
+/// let registry: process.Subject(chip.Message(Event, Id, Topic))
+/// ```
+/// 
+/// By specifying the types we can document the kind of registry we are working with.
+pub type Registry(msg, tag, group) =
+  process.Subject(Message(msg, tag, group))
 
 // API ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
@@ -32,8 +54,8 @@ pub fn start() -> Result(Registry(msg, tag, group), actor.StartError) {
 /// ```gleam
 /// chip.new(subject)
 /// ```
-pub fn new(subject: process.Subject(msg)) -> Registrant(msg, tag, group) {
-  Registrant(subject, option.None, option.None)
+pub fn new(subject: process.Subject(msg)) -> Chip(msg, tag, group) {
+  Chip(subject, option.None, option.None)
 }
 
 /// Adds a unique tag to a registrant, it will overwrite any previous subject under the same tag.
@@ -44,11 +66,8 @@ pub fn new(subject: process.Subject(msg)) -> Registrant(msg, tag, group) {
 /// chip.new(subject)
 /// |> chip.tag("Luis") 
 /// ```
-pub fn tag(
-  registrant: Registrant(msg, tag, group),
-  tag: tag,
-) -> Registrant(msg, tag, group) {
-  Registrant(..registrant, tag: option.Some(tag))
+pub fn tag(registrant: Chip(msg, tag, group), tag: tag) -> Chip(msg, tag, group) {
+  Chip(..registrant, tag: option.Some(tag))
 }
 
 /// Adds the registrant under a group. 
@@ -60,10 +79,10 @@ pub fn tag(
 /// |> chip.group(General) 
 /// ```
 pub fn group(
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
   group: group,
-) -> Registrant(msg, tag, group) {
-  Registrant(..registrant, group: option.Some(group))
+) -> Chip(msg, tag, group) {
+  Chip(..registrant, group: option.Some(group))
 }
 
 /// Registers a `Registrant`. 
@@ -92,7 +111,7 @@ pub fn group(
 /// step of your process (like an Actor's `init` callback) will keep things organized and tidy. 
 pub fn register(
   registry: Registry(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> Nil {
   process.send(registry, Register(registrant))
 }
@@ -102,9 +121,9 @@ pub fn register(
 /// ## Example
 /// 
 /// ```gleam
-/// let assert Ok(subject) = chip.tagged(registry, "Luis")
+/// let assert Ok(subject) = chip.find(registry, "Luis")
 /// ```
-pub fn lookup(
+pub fn find(
   registry: Registry(msg, tag, group),
   tag,
 ) -> Result(process.Subject(msg), Nil) {
@@ -135,11 +154,11 @@ pub fn dispatch(
 /// ## Example
 /// 
 /// ```gleam
-/// chip.dispatch_to(registry, Pets, fn(subject) { 
+/// chip.dispatch_group(registry, Pets, fn(subject) { 
 ///   process.send(subject, message)
 /// })
 /// ```
-pub fn dispatch_to(
+pub fn dispatch_group(
   registry: Registry(msg, tag, group),
   group: group,
   callback: fn(process.Subject(msg)) -> x,
@@ -155,19 +174,17 @@ pub fn info(registry: Registry(msg, tag, group)) {
 
 // Server Code ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-type Registry(msg, tag, group) =
-  process.Subject(Message(msg, tag, group))
 
 pub opaque type Message(msg, tag, group) {
-  Register(Registrant(msg, tag, group))
+  Register(Chip(msg, tag, group))
   Demonitor(process.ProcessMonitor, process.Pid)
   Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
   Members(process.Subject(List(process.Subject(msg))))
   MembersAt(process.Subject(List(process.Subject(msg))), group)
 }
 
-pub opaque type Registrant(msg, tag, group) {
-  Registrant(
+pub opaque type Chip(msg, tag, group) {
+  Chip(
     subject: process.Subject(msg),
     tag: option.Option(tag),
     group: option.Option(group),
@@ -177,7 +194,7 @@ pub opaque type Registrant(msg, tag, group) {
 type State(msg, tag, group) {
   State(
     // Keeps track of registered pids to understand when to add a new monitor down selector.
-    registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
+    registration: Dict(process.Pid, Set(Chip(msg, tag, group))),
     // Store for all registered subjects.
     registered: Set(process.Subject(msg)),
     // Store for all tagged subjects. 
@@ -251,8 +268,8 @@ fn loop(
 }
 
 fn monitor(
-  registration: Dict(process.Pid, Set(Registrant(msg, tag, group))),
-  registrant: Registrant(msg, tag, group),
+  registration: Dict(process.Pid, Set(Chip(msg, tag, group))),
+  registrant: Chip(msg, tag, group),
 ) -> option.Option(process.Selector(Message(msg, tag, group))) {
   // Check if this process is already registered.
   let pid = process.subject_owner(registrant.subject)
@@ -281,7 +298,7 @@ fn monitor(
 
 fn into_registration(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   let add_registrant = fn(option) {
     case option {
@@ -297,7 +314,7 @@ fn into_registration(
 
 fn into_registered(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   let subjects = state.registered
   let subject = registrant.subject
@@ -306,16 +323,16 @@ fn into_registered(
 
 fn into_tagged(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   case registrant {
-    Registrant(tag: option.Some(tag), subject: subject, ..) -> {
+    Chip(tag: option.Some(tag), subject: subject, ..) -> {
       let subjects = state.tagged
       let tagged = dict.insert(subjects, tag, subject)
       State(..state, tagged: tagged)
     }
 
-    Registrant(tag: option.None, ..) -> {
+    Chip(tag: option.None, ..) -> {
       state
     }
   }
@@ -323,7 +340,7 @@ fn into_tagged(
 
 fn into_grouped(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   let add_subject = fn(option) {
     case option {
@@ -333,12 +350,12 @@ fn into_grouped(
   }
 
   case registrant {
-    Registrant(group: option.Some(group), ..) -> {
+    Chip(group: option.Some(group), ..) -> {
       let grouped = dict.update(state.grouped, group, add_subject)
       State(..state, grouped: grouped)
     }
 
-    Registrant(group: option.None, ..) -> {
+    Chip(group: option.None, ..) -> {
       state
     }
   }
@@ -365,7 +382,7 @@ fn remove_registration(
 
 fn remove_from_registration(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   let pid = process.subject_owner(registrant.subject)
   let registration = dict.delete(state.registration, pid)
@@ -374,7 +391,7 @@ fn remove_from_registration(
 
 fn remove_from_registered(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   let registered = set.delete(state.registered, registrant.subject)
   State(..state, registered: registered)
@@ -382,15 +399,15 @@ fn remove_from_registered(
 
 fn remove_from_tagged(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   case registrant {
-    Registrant(tag: option.Some(tag), ..) -> {
+    Chip(tag: option.Some(tag), ..) -> {
       let tagged = dict.delete(state.tagged, tag)
       State(..state, tagged: tagged)
     }
 
-    Registrant(tag: option.None, ..) -> {
+    Chip(tag: option.None, ..) -> {
       state
     }
   }
@@ -398,10 +415,10 @@ fn remove_from_tagged(
 
 fn remove_from_grouped(
   state: State(msg, tag, group),
-  registrant: Registrant(msg, tag, group),
+  registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   case registrant {
-    Registrant(group: option.Some(group), ..) -> {
+    Chip(group: option.Some(group), ..) -> {
       case dict.get(state.grouped, group) {
         Ok(subjects) -> {
           let subjects = set.delete(subjects, registrant.subject)
@@ -416,7 +433,7 @@ fn remove_from_grouped(
       }
     }
 
-    Registrant(group: option.None, ..) -> {
+    Chip(group: option.None, ..) -> {
       state
     }
   }
