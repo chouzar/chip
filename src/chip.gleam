@@ -166,11 +166,6 @@ pub fn dispatch_group(
   list.each(subjects, callback)
 }
 
-/// Returns registry datapoints.
-pub fn info(registry: Registry(msg, tag, group)) {
-  todo
-}
-
 // Server Code ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 pub opaque type Message(msg, tag, group) {
@@ -375,8 +370,7 @@ fn remove_from_grouped(
         }
 
         Error(Nil) -> {
-          // TODO: Impossible state
-          state
+          panic as "Impossible state, group was not found on remove_from_grouped."
         }
       }
     }

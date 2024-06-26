@@ -4,9 +4,9 @@
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
 
-A local process registry that plays along Gleam's [Subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) type.  
+A local process registry that plays along with Gleam's [Subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) type. 
 
-It lets tag subjects under a name or group to later reference them. Will also automatically delist dead processes.
+It can hold to a set of subjects to later reference individually or dispatch a callback as a group. Will also automatically delist dead processes.
 
 ### Example
 
@@ -52,42 +52,52 @@ import chip/group
 pub fn main() {
   let assert Ok(registry) = chip.start()
 
-  let assert Ok(counter_1) = actor.start(1, loop)
-  let assert Ok(counter_2) = actor.start(2, loop)
-  let assert Ok(counter_3) = actor.start(3, loop)
+  let assert Ok(counter_1) = actor.start(0, loop)
+  let assert Ok(counter_2) = actor.start(0, loop)
+  let assert Ok(counter_3) = actor.start(0, loop)
 
-  group.register(registry, counter_1, "counters")
-  group.register(registry, counter_2, "counters")
-  group.register(registry, counter_3, "counters")
+  chip.register(registry, chip.new(counter_1) |> chip.tag(1))
+  chip.register(registry, chip.new(counter_2) |> chip.tag(2))
+  chip.register(registry, chip.new(counter_3) |> chip.tag(3))
   
   process.sleep_forever()
 }
 ```
 
-Later, we may retrieve members for a group: 
-
+Later, we may retrieve a member:
+ 
 ```gleam
-let assert [a, b, c] = group.members(registry, "counters")
-let assert 6 = counter.current(a) + counter.current(b) + counter.current(c)
+let assert Ok(counter) = chip.find(registry, 2)
+let assert 0 = counter.current(counter)
 ```
 
-Or broadcast a message to each Subject:
+Or broadcast a message to all members:
 
 ```gleam
-group.dispatch(registry, "counters", fn(counter) {
+chip.dispatch(registry, fn(counter) {
   actor.increment(counter)
 }) 
 
-let assert [a, b, c] = group.members(registry, "counters")
-let assert 9 = counter.current(a) + counter.current(b) + counter.current(c)
+let assert Ok(counter) = chip.find(registry, 2)
+let assert 1 = counter.current(counter)
 ```
+
+## The road towards V1
 
 Feature-wise this is near beign complete. Still planning to integrate: 
 
-- [ ] Modify the API to be more in-line with other Registry libraries like elixir's Registry, erlang's pg or Syn. 
-- [ ] Generally improve performance and memory consumption by running benchmarks. 
-- [ ] Document guides and use-cases, make test cases more readable. 
+- [x] Adjust the API to be more in-line with other Registry libraries like elixir's Registry, erlang's pg or Syn. 
+- [x] Document modules.
+- [x] Basic test case scenarios.
 - [X] Should play well with gleam style of supervisors. 
+- [ ] Document guides and use-cases. 
+- [ ] Build a benchmark that measures performance and memory consuption. 
+- [ ] Implement an ETS backend. 
+- [ ] Benchmark in-process backend vs ETS backend.
+
+## Previous Art
+
+This registry takes and combines some ideas from Elixir’s [Registry](https://hexdocs.pm/elixir/Kernel.html), Erlang’s [pg](https://www.erlang.org/doc/apps/kernel/pg.html) and [Syn](https://github.com/ostinelli/syn).
 
 ## Installation
 
