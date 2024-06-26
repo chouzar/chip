@@ -271,7 +271,7 @@ fn monitor(
   let pid = process.subject_owner(registrant.subject)
   let monitor = process.monitor_process(pid)
 
-  let on_process_down = fn(down: process.ProcessDown) {
+  let on_process_down = fn(_: process.ProcessDown) {
     // The registrant will let us understand where to remove subjects from
     Demonitor(monitor, registrant)
   }
