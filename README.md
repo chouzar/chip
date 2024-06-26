@@ -99,6 +99,10 @@ Feature-wise this is near beign complete. Still planning to integrate:
 
 This registry takes and combines some ideas from Elixir’s [Registry](https://hexdocs.pm/elixir/Kernel.html), Erlang’s [pg](https://www.erlang.org/doc/apps/kernel/pg.html) and [Syn](https://github.com/ostinelli/syn).
 
+## Alternatives
+
+[Singularity](https://hexdocs.pm/singularity/) is a gleam library that offers registry capabilities but focusing more on singleton actors, therefore it is better suited for keeping track of actors that need to be passed around as configuration through your app. 
+
 ## Installation
 
 ```sh

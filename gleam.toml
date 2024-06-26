@@ -1,5 +1,5 @@
 name = "chip"
-version = "0.6.1"
+version = "0.6.4"
 description = "A Gleam registry library"
 licences = ["Apache-2.0"]
 
@@ -9,6 +9,14 @@ licences = ["Apache-2.0"]
 repository = { type = "github", user = "chouzar", repo = "chip" }
 gleam = ">= 1.0.0"
 # links = [{ title = "Website", href = "https://gleam.run" }]
+
+
+[documentation]
+pages = [
+  { title = "General use-cases", path = "guides/general-use-cases.html", source = "./guides/general-use-cases.md" },
+  { title = "Add to a Supervisor", path = "guides/chip-as-part-of-a-supervision-tree.html", source = "./guides/chip-as-part-of-a-supervision-tree.md" },
+  { title = "As a local PubSub", path = "guides/chip-as-a-local-pubsub.html", source = "./guides/chip-as-a-local-pubsub.md" },
+]
 
 [dependencies]
 gleam_stdlib = "~> 0.36.0"
