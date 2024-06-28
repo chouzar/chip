@@ -46,7 +46,7 @@ pub fn start() -> Result(Registry(msg, tag, group), actor.StartError) {
   actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
 }
 
-/// Creates a new registrant value. 
+/// Creates a new "chip" that can be tagged, grouped and registered. 
 /// 
 /// ## Example
 /// 
@@ -57,7 +57,7 @@ pub fn new(subject: process.Subject(msg)) -> Chip(msg, tag, group) {
   Chip(subject, option.None, option.None)
 }
 
-/// Adds a unique tag to a registrant, it will overwrite any previous subject under the same tag.
+/// Adds a unique tag to a "chip", it will overwrite any previous subject under the same tag.
 /// 
 /// ## Example
 /// 
@@ -69,7 +69,7 @@ pub fn tag(registrant: Chip(msg, tag, group), tag: tag) -> Chip(msg, tag, group)
   Chip(..registrant, tag: option.Some(tag))
 }
 
-/// Adds the registrant under a group. 
+/// Adds the "chip" under a group. 
 /// 
 /// ## Example
 /// 

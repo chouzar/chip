@@ -80,23 +80,15 @@ pub fn start(registry, tag) {
 }
 
 fn init(registry, id) {
-  // Create a reference to self
-  let self = process.new_subject()
-
   // Register the counter under an id on initialization
   chip.register(
     registry,
-    self
+    process.new_subject()
       |> chip.new()
       |> chip.tag(id),
   )
 
-  // Adding self to the selector allows us to receive the Stop message
-  actor.Ready(
-    0,
-    process.new_selector()
-      |> process.selecting(self, function.identity),
-  )
+  actor.Ready(0, process.new_selector())
 }
 ```
 
@@ -173,4 +165,4 @@ Subject(//erl(<0.92.0>), //erl(#Ref<0.211861637.3582984195.76689>))
 
 Granted the registry didn't solve all our issues, now we need to pass around a copy of our registry's subject through our app. And the registry may not yet have registered the new subject (we had to wait a few milliseconds for it to update and restart). 
 
-These issues are out of scope of chip but may be solved through different techniques. For example, top-level processes may use an "app configuration" library that keeps track of singleton processes, if you'd like to re-purpose chip for this please check the [wrapping up chip Guideline](wrapping-up-chip.html) for more.
+These issues are out of scope for chip but may be solved through different techniques. For example, top-level processes may use an "app configuration" library that keeps track of singleton processes, if you'd like to re-purpose chip for this please check the [wrapping up chip Guideline](wrapping-up-chip.html) for more.
