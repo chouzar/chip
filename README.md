@@ -6,7 +6,7 @@
 
 A local process registry that plays along with Gleam's [Subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) type. 
 
-It can hold to a set of subjects to later reference individually or dispatch a callback as a group. Will also automatically delist dead processes.
+It can hold a set of subjects to later retrieve individually or dispatch as a group. Will also automatically delist dead processes.
 
 ### Example
 

@@ -168,6 +168,7 @@ pub fn dispatch_group(
 
 // Server Code ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
+/// Chip's internal message type.
 pub opaque type Message(msg, tag, group) {
   Register(Chip(msg, tag, group))
   Demonitor(process.ProcessMonitor, Chip(msg, tag, group))
@@ -176,6 +177,7 @@ pub opaque type Message(msg, tag, group) {
   MembersAt(process.Subject(List(process.Subject(msg))), group)
 }
 
+/// A "chip" used for registration. Check the [new](#new) function.
 pub opaque type Chip(msg, tag, group) {
   Chip(
     subject: process.Subject(msg),
