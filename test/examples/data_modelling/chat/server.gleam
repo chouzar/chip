@@ -1,5 +1,5 @@
-import examples/pubsub/chat/event
-import examples/pubsub/chat/pubsub
+import examples/data_modelling/chat/event
+import examples/data_modelling/chat/pubsub
 import gleam/erlang/process
 import gleam/option
 import gleam/otp/actor

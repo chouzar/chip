@@ -1,79 +1,91 @@
-import examples/pubsub/chat/event
-import examples/pubsub/chat/pubsub
-import examples/pubsub/chat/server
-import examples/pubsub/chat/supervisor as chat_supervisor
+import chip
 import gleam/erlang/process
 import gleam/list
 import gleam/otp/task
 
-pub fn chat_test() {
-  // Start the chat's supervision tree and retrieve the server.
-  let caller: process.Subject(server.Server) = process.new_subject()
-  let assert Ok(_supervisor) = chat_supervisor.start(caller)
-  let assert Ok(server) = process.receive(caller, 100)
+type PubSub =
+  process.Subject(chip.Message(String, Nil, Topic))
 
-  // For this scenario, out of simplicity, the client is the current process.
-  let client_a: Client = process.new_subject()
-  let client_b: Client = process.new_subject()
-
-  // Connect the client so it can receive new messages from the server.
-  server.connect(server, client_a, pubsub.General)
-  server.connect(server, client_b, pubsub.Coffee)
-  server.connect(server, client_b, pubsub.Pets)
-
-  task.async(fn() {
-    // Send messages from another Subject.
-    server.send(server, pubsub.Coffee, "roberto", "Hey!")
-    server.send(server, pubsub.General, "luis", "Hola Juan.")
-    server.send(server, pubsub.Coffee, "roberto", "Busco recetas para café.")
-    server.send(server, pubsub.General, "juan", "Hola Luis, como vas?")
-    server.send(server, pubsub.Coffee, "francisco", "¿Qué método?")
-    server.send(server, pubsub.Pets, "roberto", "Mi gato 🐈 ♡")
-    server.send(server, pubsub.General, "luis", "Bien! Recibiendo mensajes.")
-    server.send(server, pubsub.Pets, "anonymous", "owwww! ♡ ♡ ♡")
-    server.send(server, pubsub.Coffee, "roberto", "Para dripper.")
-  })
-
-  // Client should have received the messages
-  let assert [
-    "luis: Hola Juan.",
-    "juan: Hola Luis, como vas?",
-    "luis: Bien! Recibiendo mensajes.",
-  ] = wait_for_messages(client_a, [])
-
-  // Client should have received the messages
-  let assert [
-    "roberto: Hey!",
-    "roberto: Busco recetas para café.",
-    "francisco: ¿Qué método?",
-    "roberto: Mi gato 🐈 ♡",
-    "anonymous: owwww! ♡ ♡ ♡",
-    "roberto: Para dripper.",
-  ] = wait_for_messages(client_b, [])
+type Topic {
+  General
+  Coffee
+  Pets
 }
 
-// Client helpers
+pub fn pubsub_test() {
+  let client_a = process.new_subject()
+  let client_b = process.new_subject()
+  let client_c = process.new_subject()
 
-type Client =
-  process.Subject(event.Event)
+  let assert Ok(pubsub) = chip.start()
+  let pubsub: PubSub = pubsub
 
-fn wait_for_messages(client: Client, messages: List(String)) -> List(String) {
-  let selector =
-    process.new_selector()
-    |> process.selecting(client, build_message)
+  // client A is only interested in general  
+  chip.register(pubsub, chip.new(client_a) |> chip.group(General))
 
-  case process.select(selector, 100) {
+  // client B only cares about coffee
+  chip.register(pubsub, chip.new(client_b) |> chip.group(Coffee))
+
+  // client C wants to be everywhere
+  chip.register(pubsub, chip.new(client_c) |> chip.group(General))
+  chip.register(pubsub, chip.new(client_c) |> chip.group(Coffee))
+  chip.register(pubsub, chip.new(client_c) |> chip.group(Pets))
+
+  // broadcast a welcome to all subscribed clients
+  task.async(fn() {
+    // lets assume this is the server process broadcasting a welcome message
+    chip.dispatch_group(pubsub, General, fn(client) {
+      process.send(client, "Welcome to General!")
+    })
+    chip.dispatch_group(pubsub, General, fn(client) {
+      process.send(client, "Please follow the rules")
+    })
+    chip.dispatch_group(pubsub, General, fn(client) {
+      process.send(client, "and be good with each other :)")
+    })
+
+    chip.dispatch_group(pubsub, Coffee, fn(client) {
+      process.send(client, "Ice breaker!")
+    })
+    chip.dispatch_group(pubsub, Coffee, fn(client) {
+      process.send(client, "Favorite coffee cup?")
+    })
+    chip.dispatch_group(pubsub, Pets, fn(client) {
+      process.send(client, "Pets!")
+    })
+  })
+
+  let assert [
+    "Welcome to General!",
+    "Please follow the rules",
+    "and be good with each other :)",
+  ] = listen_for_messages(client_a, [])
+
+  let assert ["Ice breaker!", "Favorite coffee cup?"] =
+    listen_for_messages(client_b, [])
+
+  let assert [
+    "Welcome to General!",
+    "Please follow the rules",
+    "and be good with each other :)",
+    "Ice breaker!",
+    "Favorite coffee cup?",
+    "Pets!",
+  ] = listen_for_messages(client_c, [])
+}
+
+fn listen_for_messages(client, messages) -> List(String) {
+  // this function will listen until messages stop arriving for 100 milliseconds
+  case process.receive(client, 100) {
     Ok(message) ->
+      // a message was received, capture it and attempt to listen for another message
       message
       |> list.prepend(messages, _)
-      |> wait_for_messages(client, _)
+      |> listen_for_messages(client, _)
 
     Error(Nil) ->
+      // a message was not received, stop listening and return captured messages in order
       messages
       |> list.reverse()
   }
-}
-
-fn build_message(event: event.Event) -> String {
-  event.user <> ": " <> event.message
 }

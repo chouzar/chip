@@ -1,5 +1,5 @@
 import chip
-import examples/pubsub/chat/event
+import examples/data_modelling/chat/event
 import gleam/erlang/process
 import gleam/otp/actor
 import gleam/otp/supervisor

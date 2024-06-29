@@ -1,5 +1,5 @@
-import examples/pubsub/chat/pubsub
-import examples/pubsub/chat/server
+import examples/data_modelling/chat/pubsub
+import examples/data_modelling/chat/server
 import gleam/erlang/process
 import gleam/otp/actor
 import gleam/otp/supervisor
