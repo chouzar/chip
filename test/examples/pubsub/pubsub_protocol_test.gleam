@@ -20,17 +20,11 @@ pub fn pubsub_protocol_test() {
 
   // the server broadcasts coded messages 
   task.async(fn() {
-    chip.dispatch(general, fn(client) {
-      process.send(client, "How's everyone")
-    })
-    
-    chip.dispatch(java, fn(client) {
-      process.send(client, Brew)
-    })
-    
-    chip.dispatch(pet, fn(client) {
-      process.send(client, Meow)
-    })
+    chip.dispatch(general, fn(client) { process.send(client, "How's everyone") })
+
+    chip.dispatch(java, fn(client) { process.send(client, Brew) })
+
+    chip.dispatch(pet, fn(client) { process.send(client, Meow) })
   })
 
   // then receive as a single client
