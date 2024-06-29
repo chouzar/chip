@@ -85,4 +85,8 @@ This is specially useful when wanting to create a PubSub system between subjects
 
 Other libraries in the erlang ecosystem like [registry](https://hexdocs.pm/elixir/Kernel.html), [pg](https://www.erlang.org/doc/apps/kernel/pg.html) and [syn](https://github.com/ostinelli/syn) can serve the purpose of storing configuration along processess.
 
-Chip may not be well suited for this purpose as it can only store subjects of a single message type. If you need to reference subjects with different message types you may look at the [singularity](https://hexdocs.pm/singularity/) library. Also check the the [wrapping up chip Guideline](wrapping-up-chip.html) for how you may re-purpose a registry for this.
+Chip may not be well suited for this purpose as it can only store subjects of a single message type. If you need to reference subjects with different message types you may look at the [singularity](https://hexdocs.pm/singularity/) library. 
+
+# More specific examples
+
+Check the [wrapping up chip Guideline](wrapping-up-chip.html) for examples on how to re-purpose chip to your own specific use-cases.
