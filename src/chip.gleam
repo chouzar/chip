@@ -166,6 +166,18 @@ pub fn dispatch_group(
   list.each(subjects, callback)
 }
 
+/// Stops the registry.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// let assert Ok(registry) = chip.start()
+/// chip.stop(registry)
+/// ```
+pub fn stop(registry: Registry(msg, tag, group)) -> Nil {
+  process.send(registry, Stop)
+}
+
 // Server Code ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 /// Chip's internal message type.
@@ -175,6 +187,7 @@ pub opaque type Message(msg, tag, group) {
   Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
   Members(process.Subject(List(process.Subject(msg))))
   MembersAt(process.Subject(List(process.Subject(msg))), group)
+  Stop
 }
 
 /// A "chip" used for registration. Check the [new](#new) function.
@@ -217,6 +230,7 @@ fn loop(
   message: Message(msg, tag, group),
   state: State(msg, tag, group),
 ) -> actor.Next(Message(msg, tag, group), State(msg, tag, group)) {
+  // PERF: https://www.erlang.org/doc/system/eff_guide_processes.html#option-recv_opt_info
   case message {
     Register(registrant) -> {
       let state = monitor(state, registrant)
@@ -261,6 +275,10 @@ fn loop(
 
       process.send(client, subjects)
       actor.Continue(state, option.None)
+    }
+
+    Stop -> {
+      actor.Stop(process.Normal)
     }
   }
 }
