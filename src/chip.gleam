@@ -84,7 +84,7 @@ pub fn group(
   Chip(..registrant, group: option.Some(group))
 }
 
-/// Registers a `Registrant`. 
+/// Registers a subject. 
 /// 
 /// ## Example
 /// 
@@ -95,7 +95,7 @@ pub fn group(
 /// |> chip.register(registry, _)
 /// ```
 /// 
-/// `Registrant` may be registered under a tag or group.
+/// The subject may be registered under a tag or group.
 /// 
 /// ```gleam
 /// let assert Ok(registry) = chip.start()
@@ -127,6 +127,7 @@ pub fn find(
   tag,
 ) -> Result(process.Subject(msg), Nil) {
   // TODO: May be obtained from ETS directly
+  // TODO: Time out is to fragile here
   process.call(registry, Lookup(_, tag), 10)
 }
 
@@ -144,6 +145,7 @@ pub fn dispatch(
   callback: fn(process.Subject(msg)) -> x,
 ) -> Nil {
   // TODO: May be obtained from ETS directly
+  // TODO: Time out is to fragile here
   let subjects = process.call(registry, Members(_), 10)
   list.each(subjects, callback)
 }
@@ -230,11 +232,8 @@ fn loop(
   message: Message(msg, tag, group),
   state: State(msg, tag, group),
 ) -> actor.Next(Message(msg, tag, group), State(msg, tag, group)) {
-  // PERF: https://www.erlang.org/doc/system/eff_guide_processes.html#option-recv_opt_info
   case message {
     Register(registrant) -> {
-      let state = monitor(state, registrant)
-
       let state =
         state
         |> monitor(registrant)
