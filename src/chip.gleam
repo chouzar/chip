@@ -84,7 +84,7 @@ pub fn group(
   Chip(..registrant, group: option.Some(group))
 }
 
-/// Registers a subject. 
+/// Registers a `Registrant`. 
 /// 
 /// ## Example
 /// 
@@ -95,7 +95,7 @@ pub fn group(
 /// |> chip.register(registry, _)
 /// ```
 /// 
-/// The subject may be registered under a tag or group.
+/// `Registrant` may be registered under a tag or group.
 /// 
 /// ```gleam
 /// let assert Ok(registry) = chip.start()
@@ -341,7 +341,7 @@ fn into_grouped(
 
   case registrant {
     Chip(group: option.Some(group), ..) -> {
-      let grouped = dict.update(state.grouped, group, add_subject)
+      let grouped = dict.upsert(state.grouped, group, add_subject)
       State(..state, grouped: grouped)
     }
 
