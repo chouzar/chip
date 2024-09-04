@@ -201,6 +201,12 @@ pub opaque type Chip(msg, tag, group) {
   )
 }
 
+// TODO: Previous ideas:
+// * A Subject track with pids, it let us know when something is already registered. 
+//   so we avoid the selector growing too much and having less demonitors.
+// * Check if selector records are a set.
+//
+// Use metadata, given when a process is registred or at dispatch.
 type State(msg, tag, group) {
   State(
     // A copy of the actor's internal selector, useful to track new monitor down messages.
