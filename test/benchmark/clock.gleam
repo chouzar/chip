@@ -68,7 +68,8 @@ fn init(
       |> chip.group(group),
   )
 
-  // Adding self to the selector allows us to receive the Stop message
+  // The registry may send messages through the self subject to this actor
+  // adding self to this actor selector will allow us to handle those messages.
   actor.Ready(
     count,
     process.new_selector()
