@@ -90,8 +90,9 @@ Feature-wise this is near beign complete. Still planning to integrate:
 - [x] Document modules.
 - [x] Basic test case scenarios.
 - [X] Should play well with gleam style of supervisors. 
-- [ ] Document guides and use-cases. 
-- [ ] Build a benchmark that measures performance and memory consuption. 
+- [X] Document guides and use-cases. 
+- [X] Build a benchmark that measures performance. 
+- [ ] Build a benchmark that measures memory consuption. 
 - [ ] Implement an ETS backend. 
 - [ ] Benchmark in-process backend vs ETS backend.
 
