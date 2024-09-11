@@ -1,7 +1,6 @@
 defmodule Chip.Benchmark.Performance do
   @clock :benchmark@clock
   @chip :chip
-  @chip_ets :chip_ets
   @process :gleam@erlang@process
 
   def run(scenario) do
@@ -43,7 +42,7 @@ defmodule Chip.Benchmark.Performance do
               before_scenario: fn _set -> before_scenario(@chip, 1..10000) end,
               before_each: fn {registry, set} -> before_each(registry, set) end,
               after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
+            }
           }
 
         :dispatch ->
@@ -180,5 +179,118 @@ defmodule Chip.Benchmark.Performance do
       ])
 
     %{monitors: monitors, memory: memory, message_queue_length: length}
+  end
+end
+
+defmodule Chip.Benchmark.Memory do
+  @clock :benchmark@clock
+  @chip :chip
+  @process :gleam@erlang@process
+
+  def run() do
+    set = 1..10
+
+    IO.puts("\n---------------------------------- THE START ----------------------------------\n")
+    size = unit_measurement()
+    IO.puts("   Unit of measurement: #{size}")
+
+    {:ok, registry} = @chip.start()
+
+    IO.puts("\n--- Rough memory measurements ---\n")
+
+    IO.puts("   Before registration...")
+    IO.puts("     self:")
+    process_info(self()) |> display_info()
+    IO.puts("     registry:")
+    subject_info(registry) |> display_info()
+
+    for id <- set do
+      group = Enum.random([:group_a, :group_b, :group_c])
+      @clock.start(registry, id, group, 0)
+
+      if Integer.mod(id, 5000) == 0 do
+        :ok = wait_for_clear_message_queue(registry)
+      end
+    end
+
+    IO.puts("   After registration...")
+    IO.puts("     self:")
+    process_info(self()) |> display_info()
+    IO.puts("     registry:")
+    subject_info(registry) |> display_info()
+
+    for id <- set do
+      @chip.dispatch(registry, fn subject ->
+        @clock.stop(subject)
+      end)
+
+      if Integer.mod(id, 5000) == 0 do
+        :ok = wait_demonitor(registry)
+      end
+    end
+
+    IO.puts("   After demonitoring...")
+    IO.puts("     self:")
+    process_info(self()) |> display_info()
+    IO.puts("     registry:")
+    subject_info(registry) |> display_info()
+
+    IO.puts("\n----------------------------------- THE END -----------------------------------\n")
+  end
+
+  # https://www.erlang.org/doc/system/profiling.html#never-guess-about-performance-bottlenecks
+  # https://www.erlang.org/doc/system/profiling.html#memory-profiling
+  # https://www.erlang.org/doc/apps/erts/erlang#process_info/2
+
+  defp unit_measurement() do
+    :erlang.system_info(:wordsize)
+  end
+
+  defp display_info(data) do
+    %{monitors: monitors, memory: memory, message_queue_length: queue_length} =
+      data
+
+    IO.puts("       - mailbox: #{queue_length}")
+    IO.puts("       - monitors: #{monitors}")
+    IO.puts("       - memory: #{memory}")
+    IO.puts("")
+  end
+
+  defp subject_info(subject) do
+    pid = @process.subject_owner(subject)
+    process_info(pid)
+  end
+
+  defp process_info(pid) do
+    [{:monitors, monitors}, {:memory, memory}, {:message_queue_len, length}] =
+      :erlang.process_info(pid, [
+        :monitors,
+        :memory,
+        :message_queue_len
+      ])
+
+    %{monitors: Enum.count(monitors), memory: memory, message_queue_length: length}
+  end
+
+  defp wait_for_clear_message_queue(subject) do
+    case subject_info(subject) do
+      %{message_queue_length: 0} ->
+        :ok
+
+      %{message_queue_length: _length} ->
+        Process.sleep(5000)
+        wait_for_clear_message_queue(subject)
+    end
+  end
+
+  defp wait_demonitor(subject) do
+    case subject_info(subject) do
+      %{monitors: 0} ->
+        :ok
+
+      %{monitors: _monitors} ->
+        Process.sleep(5000)
+        wait_demonitor(subject)
+    end
   end
 end

@@ -5,10 +5,14 @@ type Scenario {
 }
 
 pub fn main() {
-  run(Find)
-  run(Dispatch)
-  run(DispatchGroup)
+  performance(Find)
+  performance(Dispatch)
+  performance(DispatchGroup)
+  memory()
 }
 
 @external(erlang, "Elixir.Chip.Benchmark.Performance", "run")
-fn run(scenario: Scenario) -> x
+fn performance(scenario: Scenario) -> x
+
+@external(erlang, "Elixir.Chip.Benchmark.Memory", "run")
+fn memory() -> x
