@@ -10,6 +10,8 @@ import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
+import gleam/otp/task
+import gleam/result
 import gleam/set
 
 /// An shorter alias for the registry's Subject. 
@@ -145,12 +147,12 @@ pub fn find(
 /// ```
 pub fn dispatch(
   registry: Registry(msg, tag, group),
-  callback: fn(process.Subject(msg)) -> x,
+  callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
   // TODO: May be obtained from ETS directly
   // TODO: Time out is to fragile here
-  let subjects = process.call(registry, Members(_), 5000)
-  list.each(subjects, callback)
+  // TODO: Change the callback return type to be generic and not only Nil
+  process.send(registry, Dispatch(callback))
 }
 
 /// Applies a callback over a group.
@@ -165,10 +167,10 @@ pub fn dispatch(
 pub fn dispatch_group(
   registry: Registry(msg, tag, group),
   group: group,
-  callback: fn(process.Subject(msg)) -> x,
+  callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
-  let subjects = process.call(registry, MembersAt(_, group), 5000)
-  list.each(subjects, callback)
+  // TODO: Change the callback return type to be generic and not only Nil
+  process.send(registry, DispatchGroup(callback, group))
 }
 
 /// Stops the registry.
@@ -190,8 +192,8 @@ pub opaque type Message(msg, tag, group) {
   Register(Chip(msg, tag, group))
   Demonitor(erlang.Reference, process.Pid)
   Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
-  Members(process.Subject(List(process.Subject(msg))))
-  MembersAt(process.Subject(List(process.Subject(msg))), group)
+  Dispatch(fn(process.Subject(msg)) -> Nil)
+  DispatchGroup(fn(process.Subject(msg)) -> Nil, group)
   Stop
 }
 
@@ -208,6 +210,8 @@ pub opaque type Chip(msg, tag, group) {
 // * Use metadata, given when a process is registred or at dispatch.
 type State(msg, tag, group) {
   State(
+    // This config dictates how many max tasks to launch on a dispatch.
+    max_concurrency: Int,
     // Keeps track of registrations so its easier to find subjects by pid.
     index: dict.Dict(process.Pid, set.Set(Chip(msg, tag, group))),
     // Store for all registered subjects.
@@ -245,6 +249,7 @@ fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) 
 
   actor.Ready(
     State(
+      max_concurrency: 8,
       index: dict.new(),
       registered: set.new(),
       tagged: dict.new(),
@@ -276,19 +281,20 @@ fn loop(
       actor.Continue(state, option.None)
     }
 
-    Members(client) -> {
+    Dispatch(callback) -> {
       let subjects = set.to_list(state.registered)
-      process.send(client, subjects)
+      start_dispatch(subjects, callback, state.max_concurrency)
       actor.Continue(state, option.None)
     }
 
-    MembersAt(client, group) -> {
-      let subjects = case dict.get(state.grouped, group) {
-        Ok(subjects) -> set.to_list(subjects)
-        Error(Nil) -> []
-      }
+    DispatchGroup(callback, group) -> {
+      let subjects =
+        dict.get(state.grouped, group)
+        |> result.lazy_unwrap(set.new)
+        |> set.to_list()
 
-      process.send(client, subjects)
+      start_dispatch(subjects, callback, state.max_concurrency)
+
       actor.Continue(state, option.None)
     }
 
@@ -462,6 +468,28 @@ fn remove_from_grouped(
       state
     }
   }
+}
+
+fn start_dispatch(
+  subjects: List(process.Subject(msg)),
+  callback: fn(process.Subject(msg)) -> x,
+  concurrency: Int,
+) -> Nil {
+  list.sized_chunk(subjects, concurrency)
+  |> list.each(fn(subjects) {
+    subjects
+    |> run_batch(callback)
+  })
+}
+
+fn run_batch(
+  subjects: List(process.Subject(msg)),
+  callback: fn(process.Subject(msg)) -> x,
+) -> Nil {
+  // TODO: We need a user defined waiting time.
+  subjects
+  |> list.map(fn(subject) { task.async(fn() { callback(subject) }) })
+  |> list.each(fn(task) { task.await(task, 100) })
 }
 
 @external(erlang, "chip_erlang_ffi", "decode_down_message")
