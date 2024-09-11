@@ -188,7 +188,7 @@ defmodule Chip.Benchmark.Memory do
   @process :gleam@erlang@process
 
   def run() do
-    set = 1..10
+    set = 1..10_000
 
     IO.puts("\n---------------------------------- THE START ----------------------------------\n")
     size = unit_measurement()
