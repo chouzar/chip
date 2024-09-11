@@ -50,12 +50,14 @@ pub fn dispatch_is_applied_over_subjects_test() {
 
   chip.dispatch(registry, fn(subject) { counter.increment(subject) })
 
-  let assert 2 = counter.current(counter_1)
-  let assert 3 = counter.current(counter_2)
-  let assert 4 = counter.current(counter_3)
-  let assert 5 = counter.current(counter_4)
-  let assert 6 = counter.current(counter_5)
-  let assert 7 = counter.current(counter_6)
+  // wait for counter operation to finish
+  let current = fn(counter) { counter.current(counter) }
+  let assert True = until(fn() { current(counter_1) }, is: 2, for: 50)
+  let assert True = until(fn() { current(counter_2) }, is: 3, for: 50)
+  let assert True = until(fn() { current(counter_3) }, is: 4, for: 50)
+  let assert True = until(fn() { current(counter_4) }, is: 5, for: 50)
+  let assert True = until(fn() { current(counter_5) }, is: 6, for: 50)
+  let assert True = until(fn() { current(counter_6) }, is: 7, for: 50)
 }
 
 pub fn dispatch_is_applied_over_groups_test() {
@@ -68,6 +70,10 @@ pub fn dispatch_is_applied_over_groups_test() {
   let assert Ok(counter_4) = counter.start(4)
   let assert Ok(counter_5) = counter.start(5)
   let assert Ok(counter_6) = counter.start(6)
+  let assert Ok(counter_7) = counter.start(7)
+  let assert Ok(counter_8) = counter.start(8)
+  let assert Ok(counter_9) = counter.start(9)
+  let assert Ok(counter_0) = counter.start(0)
 
   chip.new(counter_1) |> chip.group(GroupA) |> chip.register(registry, _)
   chip.new(counter_2) |> chip.group(GroupB) |> chip.register(registry, _)
@@ -75,6 +81,10 @@ pub fn dispatch_is_applied_over_groups_test() {
   chip.new(counter_4) |> chip.group(GroupC) |> chip.register(registry, _)
   chip.new(counter_5) |> chip.group(GroupC) |> chip.register(registry, _)
   chip.new(counter_6) |> chip.group(GroupC) |> chip.register(registry, _)
+  chip.new(counter_7) |> chip.group(GroupD) |> chip.register(registry, _)
+  chip.new(counter_8) |> chip.group(GroupD) |> chip.register(registry, _)
+  chip.new(counter_9) |> chip.group(GroupD) |> chip.register(registry, _)
+  chip.new(counter_0) |> chip.group(GroupD) |> chip.register(registry, _)
 
   chip.dispatch_group(registry, GroupA, fn(subject) {
     counter.increment(subject)
@@ -91,12 +101,25 @@ pub fn dispatch_is_applied_over_groups_test() {
     counter.increment(subject)
   })
 
-  let assert 2 = counter.current(counter_1)
-  let assert 4 = counter.current(counter_2)
-  let assert 5 = counter.current(counter_3)
-  let assert 7 = counter.current(counter_4)
-  let assert 8 = counter.current(counter_5)
-  let assert 9 = counter.current(counter_6)
+  chip.dispatch_group(registry, GroupD, fn(subject) {
+    counter.increment(subject)
+    counter.increment(subject)
+    counter.increment(subject)
+    counter.increment(subject)
+  })
+
+  // wait for counter operation to finish
+  let current = fn(counter) { counter.current(counter) }
+  let assert True = until(fn() { current(counter_1) }, is: 2, for: 50)
+  let assert True = until(fn() { current(counter_2) }, is: 4, for: 50)
+  let assert True = until(fn() { current(counter_3) }, is: 5, for: 50)
+  let assert True = until(fn() { current(counter_4) }, is: 7, for: 50)
+  let assert True = until(fn() { current(counter_5) }, is: 8, for: 50)
+  let assert True = until(fn() { current(counter_6) }, is: 9, for: 50)
+  let assert True = until(fn() { current(counter_7) }, is: 11, for: 50)
+  let assert True = until(fn() { current(counter_8) }, is: 12, for: 50)
+  let assert True = until(fn() { current(counter_9) }, is: 13, for: 50)
+  let assert True = until(fn() { current(counter_0) }, is: 4, for: 50)
 }
 
 //*---------------- other tests ------------------*//
@@ -222,6 +245,7 @@ type Group {
   GroupA
   GroupB
   GroupC
+  GroupD
 }
 
 fn until(condition, is outcome, for milliseconds) -> Bool {

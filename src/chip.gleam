@@ -2,12 +2,15 @@
 //// erlang processes. It can hold to a set of subjects to later reference individually or dispatch 
 //// a callback as a group. Will also automatically delist dead processes.
 
-import gleam/dict.{type Dict}
+import gleam/dict
+import gleam/dynamic
+import gleam/erlang
 import gleam/erlang/process
+import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
-import gleam/set.{type Set}
+import gleam/set
 
 /// An shorter alias for the registry's Subject. 
 /// 
@@ -128,7 +131,7 @@ pub fn find(
 ) -> Result(process.Subject(msg), Nil) {
   // TODO: May be obtained from ETS directly
   // TODO: Time out is to fragile here
-  process.call(registry, Lookup(_, tag), 10)
+  process.call(registry, Lookup(_, tag), 5000)
 }
 
 /// Applies a callback over all registered Subjects.
@@ -146,7 +149,7 @@ pub fn dispatch(
 ) -> Nil {
   // TODO: May be obtained from ETS directly
   // TODO: Time out is to fragile here
-  let subjects = process.call(registry, Members(_), 10)
+  let subjects = process.call(registry, Members(_), 5000)
   list.each(subjects, callback)
 }
 
@@ -164,7 +167,7 @@ pub fn dispatch_group(
   group: group,
   callback: fn(process.Subject(msg)) -> x,
 ) -> Nil {
-  let subjects = process.call(registry, MembersAt(_, group), 10)
+  let subjects = process.call(registry, MembersAt(_, group), 5000)
   list.each(subjects, callback)
 }
 
@@ -185,7 +188,7 @@ pub fn stop(registry: Registry(msg, tag, group)) -> Nil {
 /// Chip's internal message type.
 pub opaque type Message(msg, tag, group) {
   Register(Chip(msg, tag, group))
-  Demonitor(process.ProcessMonitor, Chip(msg, tag, group))
+  Demonitor(erlang.Reference, process.Pid)
   Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
   Members(process.Subject(List(process.Subject(msg))))
   MembersAt(process.Subject(List(process.Subject(msg))), group)
@@ -202,35 +205,53 @@ pub opaque type Chip(msg, tag, group) {
 }
 
 // TODO: Previous ideas:
-// * A Subject track with pids, it let us know when something is already registered. 
-//   so we avoid the selector growing too much and having less demonitors.
-// * Check if selector records are a set.
-//
-// Use metadata, given when a process is registred or at dispatch.
+// * Use metadata, given when a process is registred or at dispatch.
 type State(msg, tag, group) {
   State(
-    // A copy of the actor's internal selector, useful to track new monitor down messages.
-    selector: process.Selector(Message(msg, tag, group)),
+    // Keeps track of registrations so its easier to find subjects by pid.
+    index: dict.Dict(process.Pid, set.Set(Chip(msg, tag, group))),
     // Store for all registered subjects.
-    registered: Set(process.Subject(msg)),
+    registered: set.Set(process.Subject(msg)),
     // Store for all tagged subjects. 
-    tagged: Dict(tag, process.Subject(msg)),
+    tagged: dict.Dict(tag, process.Subject(msg)),
     // Store for all grouped subjects.
-    grouped: Dict(group, Set(process.Subject(msg))),
+    grouped: dict.Dict(group, set.Set(process.Subject(msg))),
   )
 }
 
+type ProcessDown {
+  ProcessDown(monitor: erlang.Reference, pid: process.Pid)
+}
+
 fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) {
-  let selector = process.new_selector()
+  // The process.selecting_process_down function accumulated selections until it made
+  // the actor non-responsive. 
+  let process_down = fn(message) {
+    case decode_down_message(message) {
+      Ok(ProcessDown(monitor, pid)) -> {
+        Demonitor(monitor, pid)
+      }
+
+      Error(Nil) -> {
+        // TODO: Have a noop operation? 
+        //       Does this selector affect the actor's messages?
+        //       Resend message to self?
+        io.debug("selecting_anything callback got an Error(Nil), message:")
+        io.debug(message)
+        panic as "Malformed down message."
+      }
+    }
+  }
 
   actor.Ready(
     State(
-      selector: selector,
+      index: dict.new(),
       registered: set.new(),
       tagged: dict.new(),
       grouped: dict.new(),
     ),
-    selector,
+    process.new_selector()
+      |> process.selecting_anything(process_down),
   )
 }
 
@@ -240,24 +261,13 @@ fn loop(
 ) -> actor.Next(Message(msg, tag, group), State(msg, tag, group)) {
   case message {
     Register(registrant) -> {
-      let state =
-        state
-        |> monitor(registrant)
-        |> into_registered(registrant)
-        |> into_tagged(registrant)
-        |> into_grouped(registrant)
-
-      actor.Continue(state, option.Some(state.selector))
+      let state = insert(state, registrant)
+      actor.Continue(state, option.None)
     }
 
-    Demonitor(monitor, registrant) -> {
-      process.demonitor_process(monitor)
-
-      state
-      |> remove_from_registered(registrant)
-      |> remove_from_tagged(registrant)
-      |> remove_from_grouped(registrant)
-      |> actor.Continue(option.None)
+    Demonitor(monitor, pid) -> {
+      let state = delete(state, monitor, pid)
+      actor.Continue(state, option.None)
     }
 
     Lookup(client, tag) -> {
@@ -288,24 +298,40 @@ fn loop(
   }
 }
 
-fn monitor(
+fn insert(
   state: State(msg, tag, group),
   registrant: Chip(msg, tag, group),
 ) -> State(msg, tag, group) {
   // Monitor the Subject's process.
   let pid = process.subject_owner(registrant.subject)
-  let monitor = process.monitor_process(pid)
+  let _monitor = process.monitor_process(pid)
 
-  let on_process_down = fn(_: process.ProcessDown) {
-    // The registrant will let us understand where to remove subjects from
-    Demonitor(monitor, registrant)
+  state
+  |> into_index(registrant)
+  |> into_registered(registrant)
+  |> into_tagged(registrant)
+  |> into_grouped(registrant)
+}
+
+fn into_index(
+  state: State(msg, tag, group),
+  registrant: Chip(msg, tag, group),
+) -> State(msg, tag, group) {
+  let pid = process.subject_owner(registrant.subject)
+
+  let registrants = case dict.get(state.index, pid) {
+    Ok(registrants) -> {
+      set.insert(registrants, registrant)
+    }
+
+    Error(Nil) -> {
+      set.new() |> set.insert(registrant)
+    }
   }
 
-  let selector =
-    state.selector
-    |> process.selecting_process_down(monitor, on_process_down)
+  let index = dict.insert(state.index, pid, registrants)
 
-  State(..state, selector: selector)
+  State(..state, index: index)
 }
 
 fn into_registered(
@@ -357,6 +383,38 @@ fn into_grouped(
   }
 }
 
+fn delete(
+  state: State(msg, tag, group),
+  monitor: erlang.Reference,
+  pid: process.Pid,
+) -> State(msg, tag, group) {
+  let Nil = demonitor(monitor)
+
+  case dict.get(state.index, pid) {
+    Ok(registrants) -> {
+      set.fold(over: registrants, from: state, with: fn(state, registrant) {
+        state
+        |> remove_from_registered(registrant)
+        |> remove_from_tagged(registrant)
+        |> remove_from_grouped(registrant)
+      })
+      |> remove_from_index(pid)
+    }
+
+    Error(Nil) -> {
+      state
+    }
+  }
+}
+
+fn remove_from_index(
+  state: State(msg, tag, group),
+  pid: process.Pid,
+) -> State(msg, tag, group) {
+  let index = dict.delete(state.index, pid)
+  State(..state, index: index)
+}
+
 fn remove_from_registered(
   state: State(msg, tag, group),
   registrant: Chip(msg, tag, group),
@@ -405,3 +463,9 @@ fn remove_from_grouped(
     }
   }
 }
+
+@external(erlang, "chip_erlang_ffi", "decode_down_message")
+fn decode_down_message(message: dynamic.Dynamic) -> Result(ProcessDown, Nil)
+
+@external(erlang, "chip_erlang_ffi", "demonitor")
+fn demonitor(reference: erlang.Reference) -> Nil
