@@ -94,11 +94,15 @@ Couple of adjustments and cleanup left for V1!
 - A `broadcast(registry, message)` function to send message types to subjects.
 - Add metadata field to be set when a subject is registered or dispatched to.
 
-## Previous Art and other Gleam registry alternatives
+## Alternatives
+
+### Previous Art 
 
 This registry takes and combines some ideas from Elixir’s [Registry](https://hexdocs.pm/elixir/Kernel.html), Erlang’s [pg](https://www.erlang.org/doc/apps/kernel/pg.html) and [Syn](https://github.com/ostinelli/syn).
 
-[Singularity](https://hexdocs.pm/singularity/) is a gleam library that offers registry capabilities but focusing more on singleton actors, therefore it is better suited for keeping track of actors that need to be passed around as configuration through your app. 
+### Other Gleam registry libraries
+
+[Singularity](https://hexdocs.pm/singularity/) is designed to register a fixed number of actors, each of which may have a different message type.
 
 ## Installation
 

@@ -129,12 +129,13 @@ pub fn find(
   registry: Registry(msg, tag, group),
   tag,
 ) -> Result(process.Subject(msg), Nil) {
-  // TODO: To make these calls fully concurrent we will need 
-  //       to create "table partitions" that will identify the
-  //       table to retrieve from through this registry's pid.
-  // 
-  //       The alternative would involve setting a user defined
-  //       name at init.
+  // TODO: To make this calls fully concurrent we would need 
+  //       a strategy for naming the registry, so that it can be
+  //       accessed through an atom.
+  //
+  //       An alternative is to have a single global ETS registry
+  //       that is indexed by {pid, tag}. At the cost of a bigger
+  //       ETS table.
   let table = process.call(registry, Find(_), 500)
 
   case ets_lookup(table, tag) {
