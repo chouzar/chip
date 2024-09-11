@@ -42,14 +42,37 @@ c 1000 chip.find       823.33 K - 1.01x slower +0.00919 μs
 d 10000 chip.find      780.58 K - 1.06x slower +0.0757 μs
 ```
 
-Generally speaking it seems to have lower numbers but we didn't get any big performance gains. What did change is the memory of the actor process itself, on `10_000` subjects:
+Generally speaking it seems to have lower numbers but we didn't get any big performance gains. 
+
+Benchmark for `chip.find(registry, id)` but with an `ETS` implementation: 
+
+```gleam
+Name                        ips        average  deviation         median         99th %
+a 10 chip.find         782.19 K        1.28 μs  ±1733.46%        1.17 μs        1.42 μs
+b 100 chip.find        780.29 K        1.28 μs  ±1607.52%        1.17 μs        1.42 μs
+c 1000 chip.find       781.99 K        1.28 μs  ±1689.63%        1.17 μs        1.54 μs
+d 10000 chip.find      792.87 K        1.26 μs  ±1557.83%        1.17 μs        1.58 μs
+
+Comparison: 
+d 10000 chip.find      792.87 K
+a 10 chip.find         782.19 K - 1.01x slower +0.0172 μs
+c 1000 chip.find       781.99 K - 1.01x slower +0.0175 μs
+b 100 chip.find        780.29 K - 1.02x slower +0.0203 μs
+```
+
+Again, this one seems to be a bit slower than the previous benchmark, it also doesn't seem to take the performance hit with a growing number of subjects.
+
+The most drastic changes between implementations where in the memoru of the actor process itself, on `10_000` subjects:
 
 * The process down selector implementation consumed about 24MB of memory.
 * The dynamic selector implementation consumed about 7MB of memory.
+* The `ETS` implementation consumed about 3MB of memory (`ETS` tables not accounted for).
 
 Current memory benchmarks are rough so take the numbers above with a grain of salt.
 
 ## Fix dispatch bloat
+
+### In memory sequential benchmarks
 
 The current implementation for dispatch works by:
 
@@ -90,6 +113,8 @@ d 10000 chip.dispatch_group        0.27 K - 588.73x slower +3633.06 μs
 
 The above is clearly inneficient, as the registry grows it will take much more time to fullfill tasks. One way to solve this issue is to do the dispatch in-process as to not bloat the client, then have a throttled dispatch as to not overload the actor itself. 
 
+### In memory throttled benchmarks
+
 Benchmark for `chip.dispatch(registry)` with the new dispatch mechanism: 
 
 ```gleam
@@ -124,7 +149,47 @@ d 10000 chip.dispatch_group        0.99 M - 1.87x slower +467.66 ns
 
 For both benchmarks above we went from several micro seconds into nano seconds. Granted this doesn't mean the dispatch was fulfilled faster only that the callers returned immediately because these are now a `send` operation, rather than a `call`. 
 
-For example, if we made this a `call` and waited for `chip.dispatch(registry)` to finish: 
+### ETS implementation benchmarks
+
+Benchmark for `chip.dispatch(registry)` with an `ETS` implementation: 
+
+```gleam
+Name                            ips        average  deviation         median         99th %
+a 10 chip.dispatch           3.01 M      332.44 ns  ±3759.74%         292 ns         625 ns
+b 100 chip.dispatch          2.67 M      374.34 ns  ±5224.41%         333 ns         667 ns
+d 10000 chip.dispatch        2.55 M      391.56 ns  ±4601.28%         333 ns         708 ns
+c 1000 chip.dispatch         2.38 M      420.92 ns  ±4807.47%         375 ns         750 ns
+
+Comparison: 
+a 10 chip.dispatch           3.01 M
+b 100 chip.dispatch          2.67 M - 1.13x slower +41.90 ns
+d 10000 chip.dispatch        2.55 M - 1.18x slower +59.12 ns
+c 1000 chip.dispatch         2.38 M - 1.27x slower +88.48 ns
+```
+
+Benchmark for `chip.dispatch_group(registry, group)` with an `ETS` implementation: 
+
+```gleam
+Name                                  ips        average  deviation         median         99th %
+a 10 chip.dispatch_group           2.31 M      433.04 ns  ±3493.78%         334 ns         875 ns
+b 100 chip.dispatch_group          1.69 M      592.41 ns  ±4017.50%         333 ns        1209 ns
+c 1000 chip.dispatch_group         1.51 M      662.83 ns  ±4752.98%         292 ns        1375 ns
+d 10000 chip.dispatch_group        1.23 M      809.97 ns  ±9557.57%         333 ns        1958 ns
+
+Comparison: 
+a 10 chip.dispatch_group           2.31 M
+b 100 chip.dispatch_group          1.69 M - 1.37x slower +159.37 ns
+c 1000 chip.dispatch_group         1.51 M - 1.53x slower +229.79 ns
+d 10000 chip.dispatch_group        1.23 M - 1.87x slower +376.93 ns
+```
+
+Similar to previous case we go into the nano-seconds. Although I still not fully grok the time increase with a bigger registry.
+
+### Make in memory throttled and ETS benchmarks return
+
+For example, if we made this a `call` and waited for `chip.dispatch(registry)` to finish.
+
+In memory throttled:
 
 ```gleam
 Name                            ips        average  deviation         median         99th %
@@ -134,4 +199,16 @@ c 1000 chip.dispatch         0.34 K        2.92 ms    ±15.16%        2.76 ms   
 d 10000 chip.dispatch      0.0317 K       31.59 ms     ±8.30%       31.07 ms       42.42 ms
 ```
 
-It looks like the numbers got worse! This is probably due to the cap of 8 concurrent tasks going on at the same time. I would rather have this dispatch be slow and then tweak it as I go along.
+ETS:
+
+```gleam
+Name                            ips        average  deviation         median         99th %
+a 10 chip.dispatch          33.78 K      0.0296 ms    ±86.19%      0.0285 ms      0.0535 ms
+b 100 chip.dispatch          3.42 K        0.29 ms    ±23.80%        0.28 ms        0.46 ms
+c 1000 chip.dispatch         0.32 K        3.10 ms    ±13.20%        2.97 ms        4.63 ms
+d 10000 chip.dispatch      0.0303 K       33.02 ms    ±15.85%       30.94 ms       57.57 ms
+```
+
+It looks like the numbers got worse! This is probably due to the cap of 8 concurrent tasks going on at the same time. However I would rather have this dispatch be slow and then tweak it as I go along.
+
+
