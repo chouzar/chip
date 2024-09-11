@@ -86,15 +86,17 @@ let assert 1 = counter.current(counter)
 
 Feature-wise this is near beign complete. Still planning to integrate: 
 
-- [x] Adjust the API to be more in-line with other Registry libraries like elixir's Registry, erlang's pg or Syn. 
-- [x] Document modules.
-- [x] Basic test case scenarios.
+- [X] Adjust the API to be more in-line with other Registry libraries like elixir's Registry, erlang's pg or Syn. 
+- [X] Document modules.
+- [X] Basic test case scenarios.
 - [X] Should play well with gleam style of supervisors. 
 - [X] Document guides and use-cases. 
 - [X] Build a benchmark that measures performance. 
-- [ ] Build a benchmark that measures memory consuption. 
-- [ ] Implement an ETS backend. 
-- [ ] Benchmark in-process backend vs ETS backend.
+- [X] Build a benchmark that measures memory consuption. 
+- [X] Implement an ETS backend. 
+- [X] Benchmark in-process backend vs ETS backend.
+
+Couple of adjustments and cleanup left for V1!
 
 ## Previous Art
 
