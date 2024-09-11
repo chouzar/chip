@@ -1,8 +1,30 @@
 -module(chip_erlang_ffi).
 -export([
     decode_down_message/1,
-    demonitor/1
+    demonitor/1,
+    search/3, 
+    search/1 
 ]).
+
+search(Table, Pattern, Limit) -> 
+    Result = ets:match(Table, Pattern, Limit),
+    handle_search(Result).
+    
+search(Continuation) -> 
+    Result = ets:match(Continuation),
+    handle_search(Result).
+    
+handle_search(Result) -> 
+    case Result of
+        {Objects, '$end_of_table'} -> 
+            {end_of_table, Objects};
+            
+        {Objects, Continuation} -> 
+            {partial, Objects, Continuation};
+            
+        '$end_of_table' ->
+            {end_of_table, []}
+        end.
 
 decode_down_message(Message) ->
     % Exit reasons: https://elixirforum.com/t/why-does-registry-use-set-and-duplicate-bag/44058

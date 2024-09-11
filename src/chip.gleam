@@ -2,17 +2,16 @@
 //// erlang processes. It can hold to a set of subjects to later reference individually or dispatch 
 //// a callback as a group. Will also automatically delist dead processes.
 
-import gleam/dict
 import gleam/dynamic
 import gleam/erlang
+import gleam/erlang/atom
 import gleam/erlang/process
+import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/otp/task
-import gleam/result
-import gleam/set
 
 /// An shorter alias for the registry's Subject. 
 /// 
@@ -48,6 +47,7 @@ pub type Registry(msg, tag, group) =
 pub fn start() -> Result(Registry(msg, tag, group), actor.StartError) {
   // TODO: Send a messsage back to the client ???
   // TODO: Should be at, top of supervision tree
+  // TODO: Add a concurrency option for dispatch
   actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
 }
 
@@ -131,9 +131,22 @@ pub fn find(
   registry: Registry(msg, tag, group),
   tag,
 ) -> Result(process.Subject(msg), Nil) {
-  // TODO: May be obtained from ETS directly
   // TODO: Time out is to fragile here
-  process.call(registry, Lookup(_, tag), 5000)
+  // TODO: How to make these calls fully concurrent?
+  let table = process.call(registry, Find(_), 500)
+
+  // Error in process <0.89.0> with exit value:
+  //   {{case_clause,'$end_of_table'},
+  //    [{chip_erlang_ffi,handle_search,1,
+  //                      [{file,"/Users/chouzar/Bench/Projects/chip/build/dev/erlang/chip/_gleam_artefacts/chip_erlang_ffi.erl"},
+  //                       {line,18}]},
+
+  // TODO: Match with end of table
+  case ets_lookup(table, tag) {
+    [#(_tag, _pid, subject)] -> Ok(subject)
+    [] -> Error(Nil)
+    _other -> panic as "Impossible lookup on a tagged table"
+  }
 }
 
 /// Applies a callback over all registered Subjects.
@@ -149,8 +162,6 @@ pub fn dispatch(
   registry: Registry(msg, tag, group),
   callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
-  // TODO: May be obtained from ETS directly
-  // TODO: Time out is to fragile here
   // TODO: Change the callback return type to be generic and not only Nil
   process.send(registry, Dispatch(callback))
 }
@@ -191,7 +202,7 @@ pub fn stop(registry: Registry(msg, tag, group)) -> Nil {
 pub opaque type Message(msg, tag, group) {
   Register(Chip(msg, tag, group))
   Demonitor(erlang.Reference, process.Pid)
-  Lookup(process.Subject(Result(process.Subject(msg), Nil)), tag)
+  Find(process.Subject(erlang.Reference))
   Dispatch(fn(process.Subject(msg)) -> Nil)
   DispatchGroup(fn(process.Subject(msg)) -> Nil, group)
   Stop
@@ -210,21 +221,23 @@ pub opaque type Chip(msg, tag, group) {
 // * Use metadata, given when a process is registred or at dispatch.
 type State(msg, tag, group) {
   State(
-    // This config dictates how many max tasks to launch on a dispatch.
+    // This config dictates how many max tasks to launch on a dispatch
     max_concurrency: Int,
-    // Keeps track of registrations so its easier to find subjects by pid.
-    index: dict.Dict(process.Pid, set.Set(Chip(msg, tag, group))),
-    // Store for all registered subjects.
-    registered: set.Set(process.Subject(msg)),
-    // Store for all tagged subjects. 
-    tagged: dict.Dict(tag, process.Subject(msg)),
-    // Store for all grouped subjects.
-    grouped: dict.Dict(group, set.Set(process.Subject(msg))),
+    // ETS table references
+    registered: erlang.Reference,
+    tagged: erlang.Reference,
+    grouped: erlang.Reference,
   )
 }
 
 type ProcessDown {
   ProcessDown(monitor: erlang.Reference, pid: process.Pid)
+}
+
+type Table {
+  ChipRegistry
+  ChipRegistryTagged
+  ChipRegistryGrouped
 }
 
 fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) {
@@ -240,7 +253,7 @@ fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) 
         // TODO: Have a noop operation? 
         //       Does this selector affect the actor's messages?
         //       Resend message to self?
-        io.debug("selecting_anything callback got an Error(Nil), message:")
+        io.debug("selecting_anything callback got an Error(Nil), message: ")
         io.debug(message)
         panic as "Malformed down message."
       }
@@ -250,10 +263,9 @@ fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) 
   actor.Ready(
     State(
       max_concurrency: 8,
-      index: dict.new(),
-      registered: set.new(),
-      tagged: dict.new(),
-      grouped: dict.new(),
+      registered: ets_new(ChipRegistry, [Protected, Set]),
+      tagged: ets_new(ChipRegistryTagged, [Protected, Set]),
+      grouped: ets_new(ChipRegistryGrouped, [Protected, Bag]),
     ),
     process.new_selector()
       |> process.selecting_anything(process_down),
@@ -266,34 +278,64 @@ fn loop(
 ) -> actor.Next(Message(msg, tag, group), State(msg, tag, group)) {
   case message {
     Register(registrant) -> {
-      let state = insert(state, registrant)
+      let Nil = insert(state, registrant)
       actor.Continue(state, option.None)
     }
 
     Demonitor(monitor, pid) -> {
-      let state = delete(state, monitor, pid)
+      let Nil = delete(state, monitor, pid)
       actor.Continue(state, option.None)
     }
 
-    Lookup(client, tag) -> {
-      let result = dict.get(state.tagged, tag)
-      process.send(client, result)
+    Find(client) -> {
+      // TODO: Find a way to share this table reference without asking 
+      //       * Maybe return the reference within the init
+      //       * Modify the API to retrieve the table independently
+      //       * Make it so this returns a task that must be awaited on. 
+      process.send(client, state.tagged)
       actor.Continue(state, option.None)
     }
 
     Dispatch(callback) -> {
-      let subjects = set.to_list(state.registered)
-      start_dispatch(subjects, callback, state.max_concurrency)
+      // TODO: A better option may be to iterate through the table
+      // TODO: Must add a cap to the number of spawned tasks
+      // TODO: Should dispatch notify when done?
+      // TODO: This dispatch should be done out of process
+
+      let get_subject = fn(object) {
+        let assert [subject] = object
+        subject
+      }
+
+      start_dispatch(
+        state.registered,
+        #(match_into(1), match_any()),
+        get_subject,
+        callback,
+        8,
+      )
+
       actor.Continue(state, option.None)
     }
 
     DispatchGroup(callback, group) -> {
-      let subjects =
-        dict.get(state.grouped, group)
-        |> result.lazy_unwrap(set.new)
-        |> set.to_list()
+      // TODO: A better option may be to iterate through the table
+      // TODO: Must add a cap to the number of spawned tasks
+      // TODO: Should dispatch notify when done?
+      // TODO: This dispatch should be done out of process
 
-      start_dispatch(subjects, callback, state.max_concurrency)
+      let get_subject = fn(object) {
+        let assert [subject] = object
+        subject
+      }
+
+      start_dispatch(
+        state.grouped,
+        #(group, match_any(), match_into(1)),
+        get_subject,
+        callback,
+        8,
+      )
 
       actor.Continue(state, option.None)
     }
@@ -307,190 +349,174 @@ fn loop(
 fn insert(
   state: State(msg, tag, group),
   registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  // Monitor the Subject's process.
+) -> Nil {
   let pid = process.subject_owner(registrant.subject)
   let _monitor = process.monitor_process(pid)
 
-  state
-  |> into_index(registrant)
-  |> into_registered(registrant)
-  |> into_tagged(registrant)
-  |> into_grouped(registrant)
-}
+  let assert True = ets_insert(state.registered, #(registrant.subject, pid))
 
-fn into_index(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  let pid = process.subject_owner(registrant.subject)
+  option.map(registrant.tag, fn(tag) {
+    let assert True = ets_insert(state.tagged, #(tag, pid, registrant.subject))
+  })
 
-  let registrants = case dict.get(state.index, pid) {
-    Ok(registrants) -> {
-      set.insert(registrants, registrant)
-    }
+  option.map(registrant.group, fn(group) {
+    let assert True =
+      ets_insert(state.grouped, #(group, pid, registrant.subject))
+  })
 
-    Error(Nil) -> {
-      set.new() |> set.insert(registrant)
-    }
-  }
-
-  let index = dict.insert(state.index, pid, registrants)
-
-  State(..state, index: index)
-}
-
-fn into_registered(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  let subjects = state.registered
-  let subject = registrant.subject
-  State(..state, registered: set.insert(subjects, subject))
-}
-
-fn into_tagged(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  case registrant {
-    Chip(tag: option.Some(tag), subject: subject, ..) -> {
-      let subjects = state.tagged
-      let tagged = dict.insert(subjects, tag, subject)
-      State(..state, tagged: tagged)
-    }
-
-    Chip(tag: option.None, ..) -> {
-      state
-    }
-  }
-}
-
-fn into_grouped(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  let add_subject = fn(option) {
-    case option {
-      option.Some(subjects) -> set.insert(subjects, registrant.subject)
-      option.None -> set.insert(set.new(), registrant.subject)
-    }
-  }
-
-  case registrant {
-    Chip(group: option.Some(group), ..) -> {
-      let grouped = dict.upsert(state.grouped, group, add_subject)
-      State(..state, grouped: grouped)
-    }
-
-    Chip(group: option.None, ..) -> {
-      state
-    }
-  }
+  Nil
 }
 
 fn delete(
   state: State(msg, tag, group),
   monitor: erlang.Reference,
   pid: process.Pid,
-) -> State(msg, tag, group) {
+) -> Nil {
   let Nil = demonitor(monitor)
 
-  case dict.get(state.index, pid) {
-    Ok(registrants) -> {
-      set.fold(over: registrants, from: state, with: fn(state, registrant) {
-        state
-        |> remove_from_registered(registrant)
-        |> remove_from_tagged(registrant)
-        |> remove_from_grouped(registrant)
-      })
-      |> remove_from_index(pid)
-    }
+  let assert True = ets_match_delete(state.registered, #(match_any(), pid))
+  let assert True =
+    ets_match_delete(state.tagged, #(match_any(), pid, match_any()))
+  let assert True =
+    ets_match_delete(state.grouped, #(match_any(), pid, match_any()))
 
-    Error(Nil) -> {
-      state
-    }
-  }
-}
-
-fn remove_from_index(
-  state: State(msg, tag, group),
-  pid: process.Pid,
-) -> State(msg, tag, group) {
-  let index = dict.delete(state.index, pid)
-  State(..state, index: index)
-}
-
-fn remove_from_registered(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  let registered = set.delete(state.registered, registrant.subject)
-  State(..state, registered: registered)
-}
-
-fn remove_from_tagged(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  case registrant {
-    Chip(tag: option.Some(tag), ..) -> {
-      let tagged = dict.delete(state.tagged, tag)
-      State(..state, tagged: tagged)
-    }
-
-    Chip(tag: option.None, ..) -> {
-      state
-    }
-  }
-}
-
-fn remove_from_grouped(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> State(msg, tag, group) {
-  case registrant {
-    Chip(group: option.Some(group), ..) -> {
-      case dict.get(state.grouped, group) {
-        Ok(subjects) -> {
-          let subjects = set.delete(subjects, registrant.subject)
-          let grouped = dict.insert(state.grouped, group, subjects)
-          State(..state, grouped: grouped)
-        }
-
-        Error(Nil) -> {
-          panic as "Impossible state, group was not found on remove_from_grouped."
-        }
-      }
-    }
-
-    Chip(group: option.None, ..) -> {
-      state
-    }
-  }
+  Nil
 }
 
 fn start_dispatch(
-  subjects: List(process.Subject(msg)),
-  callback: fn(process.Subject(msg)) -> x,
+  table: erlang.Reference,
+  pattern: pattern,
+  decode_record: fn(object) -> process.Subject(msg),
+  task: fn(process.Subject(msg)) -> Nil,
   concurrency: Int,
 ) -> Nil {
-  list.sized_chunk(subjects, concurrency)
-  |> list.each(fn(subjects) {
-    subjects
-    |> run_batch(callback)
-  })
+  // TODO: Currently this is very fragile. Work to improve this: 
+  // * Chip shouldn't stop working, waiting for these tasks to finish.
+  // * Tasks should be spawned on batches, to not overload the system.
+  // * Each task should be monitored by a process. 
+  //   * On success, each task would notify the monitor.  
+  //   * On error, each task should log or have a behaviour to report to.  
+  // 
+  // NOTE: Should this maybe be processed within actor messages?
+
+  table
+  |> search(pattern, concurrency)
+  |> handle_dispatch_results(decode_record, task)
+}
+
+fn continue_dispatch(
+  step: Step,
+  decode_record: fn(object) -> process.Subject(msg),
+  task: fn(process.Subject(msg)) -> Nil,
+) -> Nil {
+  search_continuation(step)
+  |> handle_dispatch_results(decode_record, task)
+}
+
+fn handle_dispatch_results(
+  lookup: Search(object),
+  decode_record: fn(object) -> process.Subject(msg),
+  task: fn(process.Subject(msg)) -> Nil,
+) {
+  case lookup {
+    Partial(objects, step) -> {
+      objects
+      |> list.map(decode_record)
+      |> run_batch(task)
+
+      continue_dispatch(step, decode_record, task)
+    }
+
+    EndOfTable(objects) -> {
+      objects
+      |> list.map(decode_record)
+      |> run_batch(task)
+    }
+  }
 }
 
 fn run_batch(
   subjects: List(process.Subject(msg)),
-  callback: fn(process.Subject(msg)) -> x,
+  callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
   // TODO: We need a user defined waiting time.
   subjects
   |> list.map(fn(subject) { task.async(fn() { callback(subject) }) })
   |> list.each(fn(task) { task.await(task, 100) })
 }
+
+// ETS Code ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+type Option {
+  Protected
+  Set
+  Bag
+}
+
+type Step
+
+type Search(object) {
+  Partial(List(object), Step)
+  EndOfTable(List(object))
+}
+
+// TODO; Create Pattern types to match on easily
+
+// rename into select
+fn match_into(n: Int) -> atom.Atom {
+  atom.create_from_string("$" <> int.to_string(n))
+}
+
+fn match_any() -> atom.Atom {
+  atom.create_from_string("_")
+}
+
+@external(erlang, "chip_erlang_ffi", "search")
+fn search(
+  table: erlang.Reference,
+  pattern: pattern,
+  limit: Int,
+) -> Search(objects)
+
+@external(erlang, "chip_erlang_ffi", "search")
+fn search_continuation(step: Step) -> Search(objects)
+
+@external(erlang, "ets", "new")
+fn ets_new(table: Table, options: List(Option)) -> erlang.Reference
+
+@external(erlang, "ets", "insert")
+fn ets_insert(table: erlang.Reference, value: value) -> Bool
+
+@external(erlang, "ets", "lookup")
+fn ets_lookup(table: erlang.Reference, key: key) -> List(object)
+
+@external(erlang, "ets", "match_delete")
+fn ets_match_delete(table: erlang.Reference, pattern: pattern) -> Bool
+
+//@external(erlang, "ets", "match")
+//fn ets_match(table: erlang.Reference, pattern: pattern) -> List(object)
+//
+// @external(erlang, "ets", "delete")
+// fn ets_delete(table: erlang.Reference, key: key) -> Bool
+//
+//@external(erlang, "ets", "tab2list")
+//fn ets_all(table: erlang.Reference) -> List(object)
+//
+//@external(erlang, "ets", "member")
+//fn ets_member(table: erlang.Reference, key: key) -> Bool
+//
+//@external(erlang, "ets", "delete")
+//fn ets_kill(table: erlang.Reference) -> Bool
+//
+//@external(erlang, "erlang", "spawn")
+//fn spawn(f: fn() -> x) -> process.Pid
+//
+//fn end_of_table() -> atom.Atom {
+//  atom.create_from_string("$end_of_table")
+//}
+//
+
+// Other helpers
 
 @external(erlang, "chip_erlang_ffi", "decode_down_message")
 fn decode_down_message(message: dynamic.Dynamic) -> Result(ProcessDown, Nil)
