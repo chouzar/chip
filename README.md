@@ -1,53 +1,42 @@
-# chip
+# Chip - A subject registry library
 
 [![Package Version](https://img.shields.io/hexpm/v/chip)](https://hex.pm/packages/chip)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
-
-A local process registry that plays along with Gleam's [Subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) type. 
-
-It can hold a set of subjects to later retrieve individually or dispatch as a group. Will also automatically delist dead processes.
+Chip is a performant local registry that can hold to a set of [subjects](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) to later retrieve or dispatch tasks to. 
 
 ### Example
 
-Lets assemble the pieces to build a simple counter actor:
+Lets assemble a simple counter actor:
 
 ```gleam
 import gleam/erlang/process
 import gleam/otp/actor
 
-pub opaque type Message {
+pub type Message {
   Inc
   Current(client: process.Subject(Int))
-}
-
-pub fn increment(counter) {
-  actor.send(counter, Inc)
-}
-
-pub fn current(counter) {
-  actor.call(counter, Current(_), 10)
 }
 
 fn loop(message: Message, count: Int) {
   case message {
     Inc -> {
-      actor.Continue(count + 1, option.None)
+      actor.continue(count + 1)
     }
 
     Current(client) -> {
       process.send(client, count)
-      actor.Continue(count, option.None)
+      actor.continue(count)
     }
   }
 }
 ```
 
-We start our registry and create new instances of a counter:
+We start our registry and create new instances of the counter:
 
 ```gleam
+import chip
 import gleam/otp/actor
-import chip/group
 
 pub fn main() {
   let assert Ok(registry) = chip.start()
@@ -68,19 +57,21 @@ Later, we may retrieve a member:
  
 ```gleam
 let assert Ok(counter) = chip.find(registry, 2)
-let assert 0 = counter.current(counter)
+let assert 0 = actor.call(counter, Current(_), 10)
 ```
 
-Or broadcast a message to all members:
+Or dispatch a task to all members or group:
 
 ```gleam
 chip.dispatch(registry, fn(counter) {
-  actor.increment(counter)
+  actor.send(counter, Inc)
 }) 
 
 let assert Ok(counter) = chip.find(registry, 2)
-let assert 1 = counter.current(counter)
+let assert 1 = actor.call(counter, Current(_), 10)
 ```
+
+Chip will also automatically delist dead processes.
 
 ## The road towards V1
 
@@ -98,11 +89,14 @@ Feature-wise this is near beign complete. Still planning to integrate:
 
 Couple of adjustments and cleanup left for V1!
 
-## Previous Art
+## Tentative features
+
+- A `broadcast(registry, message)` function to send message types to subjects.
+- Add metadata field to be set when a subject is registered or dispatched to.
+
+## Previous Art and other Gleam registry alternatives
 
 This registry takes and combines some ideas from Elixir’s [Registry](https://hexdocs.pm/elixir/Kernel.html), Erlang’s [pg](https://www.erlang.org/doc/apps/kernel/pg.html) and [Syn](https://github.com/ostinelli/syn).
-
-## Alternatives
 
 [Singularity](https://hexdocs.pm/singularity/) is a gleam library that offers registry capabilities but focusing more on singleton actors, therefore it is better suited for keeping track of actors that need to be passed around as configuration through your app. 
 
