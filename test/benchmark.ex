@@ -124,7 +124,7 @@ defmodule Chip.Benchmark.Performance do
       # before_scenario: fn set -> before_scenario(@chip, set) end,
       # before_each: fn {registry, set} -> before_each(registry, set) end,
       # after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end,
-      time: 3,
+      time: 10,
       print: %{configuration: false}
     )
   end
@@ -137,7 +137,6 @@ defmodule Chip.Benchmark.Performance do
       @clock.start(registry, id, group, 0)
 
       if Integer.mod(id, 5000) == 0 do
-        IO.puts(id)
         :ok = wait_for_clear_message_queue(registry)
       end
     end
