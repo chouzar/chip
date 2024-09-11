@@ -42,7 +42,12 @@ c 1000 chip.find       823.33 K - 1.01x slower +0.00919 μs
 d 10000 chip.find      780.58 K - 1.06x slower +0.0757 μs
 ```
 
-Generally speaking it seems to have lower numbers but we didn't get any big performance gains.
+Generally speaking it seems to have lower numbers but we didn't get any big performance gains. What did change is the memory of the actor process itself, on `10_000` subjects:
+
+* The process down selector implementation consumed about 24MB of memory.
+* The dynamic selector implementation consumed about 7MB of memory.
+
+Current memory benchmarks are rough so take the numbers above with a grain of salt.
 
 ## Fix dispatch bloat
 
