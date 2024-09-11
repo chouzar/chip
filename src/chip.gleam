@@ -12,6 +12,7 @@ import gleam/list
 import gleam/option
 import gleam/otp/actor
 import gleam/otp/task
+import gleam/string
 
 /// An shorter alias for the registry's Subject. 
 /// 
@@ -45,9 +46,6 @@ pub type Registry(msg, tag, group) =
 /// > chip.start()
 /// ```
 pub fn start() -> Result(Registry(msg, tag, group), actor.StartError) {
-  // TODO: Send a messsage back to the client ???
-  // TODO: Should be at, top of supervision tree
-  // TODO: Add a concurrency option for dispatch
   actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
 }
 
@@ -131,21 +129,18 @@ pub fn find(
   registry: Registry(msg, tag, group),
   tag,
 ) -> Result(process.Subject(msg), Nil) {
-  // TODO: Time out is to fragile here
-  // TODO: How to make these calls fully concurrent?
+  // TODO: To make these calls fully concurrent we will need 
+  //       to create "table partitions" that will identify the
+  //       table to retrieve from through this registry's pid.
+  // 
+  //       The alternative would involve setting a user defined
+  //       name at init.
   let table = process.call(registry, Find(_), 500)
 
-  // Error in process <0.89.0> with exit value:
-  //   {{case_clause,'$end_of_table'},
-  //    [{chip_erlang_ffi,handle_search,1,
-  //                      [{file,"/Users/chouzar/Bench/Projects/chip/build/dev/erlang/chip/_gleam_artefacts/chip_erlang_ffi.erl"},
-  //                       {line,18}]},
-
-  // TODO: Match with end of table
   case ets_lookup(table, tag) {
     [#(_tag, _pid, subject)] -> Ok(subject)
     [] -> Error(Nil)
-    _other -> panic as "Impossible lookup on a tagged table"
+    _other -> panic as "Impossible lookup on a tagged table."
   }
 }
 
@@ -162,7 +157,6 @@ pub fn dispatch(
   registry: Registry(msg, tag, group),
   callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
-  // TODO: Change the callback return type to be generic and not only Nil
   process.send(registry, Dispatch(callback))
 }
 
@@ -180,7 +174,6 @@ pub fn dispatch_group(
   group: group,
   callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
-  // TODO: Change the callback return type to be generic and not only Nil
   process.send(registry, DispatchGroup(callback, group))
 }
 
@@ -205,6 +198,7 @@ pub opaque type Message(msg, tag, group) {
   Find(process.Subject(erlang.Reference))
   Dispatch(fn(process.Subject(msg)) -> Nil)
   DispatchGroup(fn(process.Subject(msg)) -> Nil, group)
+  NoOperation(dynamic.Dynamic)
   Stop
 }
 
@@ -217,15 +211,15 @@ pub opaque type Chip(msg, tag, group) {
   )
 }
 
-// TODO: Previous ideas:
-// * Use metadata, given when a process is registred or at dispatch.
 type State(msg, tag, group) {
   State(
-    // This config dictates how many max tasks to launch on a dispatch
+    // This config dictates how many max tasks to launch on a dispatch.
     max_concurrency: Int,
-    // ETS table references
+    // Store for all registered subjects.
     registered: erlang.Reference,
+    // Store for all tagged subjects. 
     tagged: erlang.Reference,
+    // Store for all grouped subjects.
     grouped: erlang.Reference,
   )
 }
@@ -250,19 +244,14 @@ fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) 
       }
 
       Error(Nil) -> {
-        // TODO: Have a noop operation? 
-        //       Does this selector affect the actor's messages?
-        //       Resend message to self?
-        io.debug("selecting_anything callback got an Error(Nil), message: ")
-        io.debug(message)
-        panic as "Malformed down message."
+        NoOperation(message)
       }
     }
   }
 
   actor.Ready(
     State(
-      max_concurrency: 8,
+      max_concurrency: schedulers(),
       registered: ets_new(ChipRegistry, [Protected, Set]),
       tagged: ets_new(ChipRegistryTagged, [Protected, Set]),
       grouped: ets_new(ChipRegistryGrouped, [Protected, Bag]),
@@ -288,53 +277,50 @@ fn loop(
     }
 
     Find(client) -> {
-      // TODO: Find a way to share this table reference without asking 
-      //       * Maybe return the reference within the init
-      //       * Modify the API to retrieve the table independently
-      //       * Make it so this returns a task that must be awaited on. 
       process.send(client, state.tagged)
       actor.Continue(state, option.None)
     }
 
     Dispatch(callback) -> {
-      // TODO: A better option may be to iterate through the table
-      // TODO: Must add a cap to the number of spawned tasks
-      // TODO: Should dispatch notify when done?
-      // TODO: This dispatch should be done out of process
-
-      let get_subject = fn(object) {
+      let match = #(match_into(1), match_any())
+      let cast = fn(object) {
         let assert [subject] = object
         subject
       }
 
       start_dispatch(
         state.registered,
-        #(match_into(1), match_any()),
-        get_subject,
+        match,
+        cast,
         callback,
-        8,
+        state.max_concurrency,
       )
 
       actor.Continue(state, option.None)
     }
 
     DispatchGroup(callback, group) -> {
-      // TODO: A better option may be to iterate through the table
-      // TODO: Must add a cap to the number of spawned tasks
-      // TODO: Should dispatch notify when done?
-      // TODO: This dispatch should be done out of process
-
-      let get_subject = fn(object) {
+      let match = #(group, match_any(), match_into(1))
+      let cast = fn(object) {
         let assert [subject] = object
         subject
       }
 
       start_dispatch(
         state.grouped,
-        #(group, match_any(), match_into(1)),
-        get_subject,
+        match,
+        cast,
         callback,
-        8,
+        state.max_concurrency,
+      )
+
+      actor.Continue(state, option.None)
+    }
+
+    NoOperation(message) -> {
+      io.println(
+        "chip: received an out of bound message from a non-selected process.\n"
+        <> string.inspect(message),
       )
 
       actor.Continue(state, option.None)
@@ -390,18 +376,21 @@ fn start_dispatch(
   task: fn(process.Subject(msg)) -> Nil,
   concurrency: Int,
 ) -> Nil {
-  // TODO: Currently this is very fragile. Work to improve this: 
-  // * Chip shouldn't stop working, waiting for these tasks to finish.
-  // * Tasks should be spawned on batches, to not overload the system.
-  // * Each task should be monitored by a process. 
-  //   * On success, each task would notify the monitor.  
-  //   * On error, each task should log or have a behaviour to report to.  
-  // 
-  // NOTE: Should this maybe be processed within actor messages?
+  // TODO: Currently this is very fragile, possible improvements:  
+  // * Dispatch should be ran in another process:
+  //   * This process may use a pool, rather than a queue to spawn more tasks.
+  //   * Should we guarantee order of dispatches/tasks?
 
-  table
-  |> search(pattern, concurrency)
-  |> handle_dispatch_results(decode_record, task)
+  process.start(
+    running: fn() {
+      table
+      |> search(pattern, concurrency)
+      |> handle_dispatch_results(decode_record, task)
+    },
+    linked: False,
+  )
+
+  Nil
 }
 
 fn continue_dispatch(
@@ -439,13 +428,10 @@ fn run_batch(
   subjects: List(process.Subject(msg)),
   callback: fn(process.Subject(msg)) -> Nil,
 ) -> Nil {
-  // TODO: We need a user defined waiting time.
   subjects
   |> list.map(fn(subject) { task.async(fn() { callback(subject) }) })
-  |> list.each(fn(task) { task.await(task, 100) })
+  |> list.each(fn(task) { task.await(task, 5000) })
 }
-
-// ETS Code ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 type Option {
   Protected
@@ -460,9 +446,6 @@ type Search(object) {
   EndOfTable(List(object))
 }
 
-// TODO; Create Pattern types to match on easily
-
-// rename into select
 fn match_into(n: Int) -> atom.Atom {
   atom.create_from_string("$" <> int.to_string(n))
 }
@@ -493,33 +476,11 @@ fn ets_lookup(table: erlang.Reference, key: key) -> List(object)
 @external(erlang, "ets", "match_delete")
 fn ets_match_delete(table: erlang.Reference, pattern: pattern) -> Bool
 
-//@external(erlang, "ets", "match")
-//fn ets_match(table: erlang.Reference, pattern: pattern) -> List(object)
-//
-// @external(erlang, "ets", "delete")
-// fn ets_delete(table: erlang.Reference, key: key) -> Bool
-//
-//@external(erlang, "ets", "tab2list")
-//fn ets_all(table: erlang.Reference) -> List(object)
-//
-//@external(erlang, "ets", "member")
-//fn ets_member(table: erlang.Reference, key: key) -> Bool
-//
-//@external(erlang, "ets", "delete")
-//fn ets_kill(table: erlang.Reference) -> Bool
-//
-//@external(erlang, "erlang", "spawn")
-//fn spawn(f: fn() -> x) -> process.Pid
-//
-//fn end_of_table() -> atom.Atom {
-//  atom.create_from_string("$end_of_table")
-//}
-//
-
-// Other helpers
-
 @external(erlang, "chip_erlang_ffi", "decode_down_message")
 fn decode_down_message(message: dynamic.Dynamic) -> Result(ProcessDown, Nil)
 
 @external(erlang, "chip_erlang_ffi", "demonitor")
 fn demonitor(reference: erlang.Reference) -> Nil
+
+@external(erlang, "chip_erlang_ffi", "schedulers")
+fn schedulers() -> Int
