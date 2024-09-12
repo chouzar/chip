@@ -129,13 +129,6 @@ pub fn find(
   registry: Registry(msg, tag, group),
   tag,
 ) -> Result(process.Subject(msg), Nil) {
-  // TODO: To make this calls fully concurrent we would need 
-  //       a strategy for naming the registry, so that it can be
-  //       accessed through an atom.
-  //
-  //       An alternative is to have a single global ETS registry
-  //       that is indexed by {pid, tag}. At the cost of a bigger
-  //       ETS table.
   let table = process.call(registry, Find(_), 500)
 
   case ets_lookup(table, tag) {
@@ -377,11 +370,6 @@ fn start_dispatch(
   task: fn(process.Subject(msg)) -> Nil,
   concurrency: Int,
 ) -> Nil {
-  // TODO: Currently this is very fragile, possible improvements:  
-  // * Dispatch should be ran in another process:
-  //   * This process may use a pool, rather than a queue to spawn more tasks.
-  //   * Should we guarantee order of dispatches/tasks?
-
   process.start(
     running: fn() {
       table
