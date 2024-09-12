@@ -91,8 +91,7 @@ Couple of adjustments and cleanup left for V1!
 
 ## Tentative features
 
-- A `broadcast(registry, message)` function to send message types to subjects.
-- Add metadata field to be set when a subject is registered or dispatched to.
+[Documented as Issues](https://github.com/chouzar/chip) on this project's github repo. If you'd like to see a new feature please open an issue.
 
 ## Alternatives
 
