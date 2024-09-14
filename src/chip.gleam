@@ -1,6 +1,6 @@
-//// Chip is a local process registry that plays along with Gleam's `Subject` type for referencing
-//// erlang processes. It can hold to a set of subjects to later reference individually or dispatch 
-//// a callback as a group. Will also automatically delist dead processes.
+//// Chip is a local [subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) 
+//// registry that can reference subjects individually or as part of a group. Will also 
+//// automatically delist dead processes.
 
 import gleam/dynamic
 import gleam/erlang
@@ -87,7 +87,7 @@ pub fn group(
   Chip(..registrant, group: option.Some(group))
 }
 
-/// Registers a `Registrant`. 
+/// Registers a "chip". 
 /// 
 /// ## Example
 /// 
@@ -98,7 +98,7 @@ pub fn group(
 /// |> chip.register(registry, _)
 /// ```
 /// 
-/// `Registrant` may be registered under a tag or group.
+/// The subject may be registered under a tag or group.
 /// 
 /// ```gleam
 /// let assert Ok(registry) = chip.start()

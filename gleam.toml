@@ -1,5 +1,5 @@
 name = "chip"
-version = "0.8.5"
+version = "0.9.0"
 description = "A Gleam registry library"
 licences = ["Apache-2.0"]
 
@@ -12,10 +12,9 @@ gleam = ">= 1.0.0"
 
 [documentation]
 pages = [
-  { title = "General use-cases", path = "guides/general-use-cases.html", source = "./guides/general-use-cases.md" },
-  { title = "Add to a Supervisor", path = "guides/chip-as-part-of-a-supervision-tree.html", source = "./guides/chip-as-part-of-a-supervision-tree.md" },
-  { title = "As a local PubSub", path = "guides/chip-as-a-local-pubsub.html", source = "./guides/chip-as-a-local-pubsub.md" },
-  { title = "Wrapping up Chip", path = "guides/wrapping-up-chip.html", source = "./guides/wrapping-up-chip.md" },
+  { title = "as a local pubsub", path = "guides/as-local-pubsub.html", source = "./test/guides/as-local-pubsub.md" },
+  { title = "as a subject index", path = "guides/as-subject-index.html", source = "./test/guides/as-subject-index.md" },
+  { title = "as part of supervisor", path = "guides/as-part-of-supervisor.html", source = "./test/guides/as-part-of-supervisor.md" },
 ]
 
 [dependencies]

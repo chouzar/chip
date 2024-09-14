@@ -1,19 +1,11 @@
 import chip
-import examples/data_modelling/chat/event
 import gleam/erlang/process
-import gleam/otp/actor
 import gleam/otp/supervisor
 
-pub type PubSub =
-  chip.Registry(event.Event, Nil, Channel)
+pub type PubSub(message, channel) =
+  chip.Registry(message, Nil, channel)
 
-pub type Channel {
-  General
-  Coffee
-  Pets
-}
-
-pub fn start() -> Result(PubSub, actor.StartError) {
+pub fn start() {
   chip.start()
 }
 
@@ -23,16 +15,20 @@ pub fn childspec() {
 }
 
 pub fn subscribe(
-  pubsub: PubSub,
-  channel: Channel,
-  subject: process.Subject(event.Event),
+  pubsub: PubSub(message, channel),
+  channel: channel,
+  subject: process.Subject(message),
 ) -> Nil {
   chip.new(subject)
   |> chip.group(channel)
   |> chip.register(pubsub, _)
 }
 
-pub fn publish(pubsub: PubSub, channel: Channel, message: event.Event) -> Nil {
+pub fn publish(
+  pubsub: PubSub(message, channel),
+  channel: channel,
+  message: message,
+) -> Nil {
   chip.dispatch_group(pubsub, channel, fn(subscriber) {
     process.send(subscriber, message)
   })

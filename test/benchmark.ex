@@ -1,5 +1,5 @@
 defmodule Chip.Benchmark.Performance do
-  @clock :benchmark@clock
+  @clock :artifacts@clock
   @chip :chip
   @process :gleam@erlang@process
 
