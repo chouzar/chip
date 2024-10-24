@@ -49,6 +49,23 @@ pub fn start() -> Result(Registry(msg, tag, group), actor.StartError) {
   actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
 }
 
+/// Starts the registry from a given specification.
+/// 
+/// ## Example
+/// 
+/// ```gleam
+/// > chip.start_spec(init_timeout: 10)
+/// ```
+pub fn start_spec(
+  init_timeout init_timeout: Int,
+) -> Result(Registry(msg, tag, group), actor.StartError) {
+  actor.start_spec(actor.Spec(
+    init: init,
+    init_timeout: init_timeout,
+    loop: loop,
+  ))
+}
+
 /// Creates a new "chip" that can be tagged, grouped and registered. 
 /// 
 /// ## Example
