@@ -26,6 +26,20 @@ pub fn cannot_retrieve_subject_if_not_registered_test() {
   let assert Error(Nil) = chip.find(registry, "nothing")
 }
 
+//*---------------- all tests --------------*//
+
+pub fn can_retrieve_all_registered_subjects_test() {
+  todo
+}
+
+pub fn can_retrieve_different_subjects_of_same_process() {
+  todo
+}
+
+pub fn cannot_retrieve_duplicate_subjects_test() {
+  todo
+}
+
 //*---------------- dispatch tests --------------*//
 
 pub fn dispatch_is_applied_over_subjects_test() {

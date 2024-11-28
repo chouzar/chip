@@ -12,15 +12,16 @@ gleam = ">= 1.0.0"
 
 [documentation]
 pages = [
-  { title = "as a local pubsub", path = "guides/as-local-pubsub.html", source = "./test/guides/as-local-pubsub.md" },
-  { title = "as a subject index", path = "guides/as-subject-index.html", source = "./test/guides/as-subject-index.md" },
-  { title = "as part of supervisor", path = "guides/as-part-of-supervisor.html", source = "./test/guides/as-part-of-supervisor.md" },
+    { title = "as a local pubsub", path = "guides/as-local-pubsub.html", source = "./test/guides/as-local-pubsub.md" },
+    { title = "as a subject index", path = "guides/as-subject-index.html", source = "./test/guides/as-subject-index.md" },
+    { title = "as part of supervisor", path = "guides/as-part-of-supervisor.html", source = "./test/guides/as-part-of-supervisor.md" },
 ]
 
 [dependencies]
 gleam_stdlib = ">= 0.36.0 and < 2.0.0"
 gleam_erlang = ">= 0.24.0 and < 2.0.0"
 gleam_otp = ">= 0.10.0 and < 2.0.0"
+lamb = ">= 0.1.0 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
