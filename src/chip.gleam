@@ -3,17 +3,12 @@
 //// automatically delist dead processes.
 
 // TODO: Rework docs and test docs.
-// TODO: Have a system for naming registry a global registry table with pids and names.
-// TODO: Remove `new` API in favor of register_as and register_in
-// TODO: Have a system for naming registry a global registry table with pids and names.
-// TODO: Use persistent term? Single table, Multiple tables?
-// TODO: Implement an all subjects function
-// TODO: Implement a dispatch one function
-// TODO: This whole section should be at init time.
+// TODO: Document plan to research persistent term for the chip_registries table.
+// TODO: Document plan for a dispatch function.
 
 import gleam/dynamic
 import gleam/erlang
-import gleam/erlang/atom.{type Atom}
+import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/function
 import gleam/io
@@ -21,32 +16,37 @@ import gleam/option
 import gleam/otp/actor
 import gleam/result.{try}
 import gleam/string
-import lamb.{Bag, Protected}
+import lamb.{Bag, Protected, Public, Set}
 import lamb/query as q
 import lamb/query/term as t
 
-/// An shorter alias for the registry's Subject.
+const registry_store = "chip_registries"
+
+const group_store = "chip_groups"
+
+/// An shorter alias for the registry's subject.
 ///
 /// Sometimes, when building out your system it may be useful to state the Registry's types.
 ///
 /// ## Example
 ///
 /// ```gleam
-/// let assert Ok(registry) = chip.start()
-/// let registry: chip.Registry(Event, Id, Topic)
+/// let assert Ok(registry) = chip.start(chip.Unnamed)
+/// let registry: chip.Registry(Event, Topic)
 /// ```
 ///
 /// Which is equivalent to:
 ///
 /// ```gleam
 /// let assert Ok(registry) = chip.start()
-/// let registry: Subject(chip.Message(Event, Id, Topic))
+/// let registry: process.Subject(chip.Message(Event, Topic))
 /// ```
 ///
 /// By specifying the types we can document the kind of registry we are working with.
 pub type Registry(msg, group) =
   Subject(Message(msg, group))
 
+/// An option passed to `chip.start` to make the registry available through a name.
 pub type Named {
   Named(String)
   Unnamed
@@ -58,44 +58,95 @@ pub type Named {
 ///
 /// ## Example
 ///
+/// Normally, the registry may be started in an unnamed fashion. ///
 /// ```gleam
-/// > chip.start()
+/// > let assert Ok(registry) = chip.start(chip.Unnamed)
 /// ```
+///
+/// You will need to provide a mechanism to carry around the registry's subject
+/// through your system.
+///
+/// It is also possible to start a named registry.
+///
+/// ```gleam
+/// > let _ = chip.start(chip.Named("sessions"))
+///
+/// You may retrieve now this registry's by using the `from` function.
 pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
   let init = fn() { init(named) }
   actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
 }
 
-// TODO: docs + warning on how to properly retrieve values from here.
-// This is not type safe so will require maitenance from the programmer's end.
-pub fn from(_name: String) -> Result(Registry(msg, group), Nil) {
-  todo
-}
-
-/// Registers a "chip".
+/// Retrieves a previously named registry.
 ///
 /// ## Example
 ///
 /// ```gleam
-/// let assert Ok(registry) = chip.start()
-///
-/// chip.new(subject)
-/// |> chip.register(registry, _)
+/// let _ = chip.start(chip.Named("sessions"))
+/// let assert Ok(registry) = chip.from("sessions")
 /// ```
 ///
-/// The subject may be registered under a tag or group.
+/// This function can be useful when you don't have the registry's subject in scope.
+/// Ideally, you would carry around the registry's subject down your pipeline and
+/// always have it available but this can become hard to mantains if you don't
+/// already provide a solid solution for your system.
+///
+/// Be mindful that using it means you lose type safety as the `from` function only
+/// knows you return a registry but it doesn't know the message type or the group
+/// type. It would not be a bad idea to wrap it under a typed function:
 ///
 /// ```gleam
-/// let assert Ok(registry) = chip.start()
-///
-/// chip.new(subject)
-/// |> chip.tag("Francisco")
-/// |> chip.group(Coffee)
-/// |> chip.register(registry, _)
+/// fn get_session(name: String) -> chip.Registry(Message, Groups) {
+///   case chip.from("sessions") {
+///     Ok(registry) -> registry
+///     Error(Nil) -> panic as "session is not available"
+///   }
+/// }
 /// ```
 ///
-/// You may register any subject at any point in time but usually keeping it under the initialization
-/// step of your process (like an Actor's `init` callback) will keep things organized and tidy.
+/// Even with the wrapper above, there's no guarantee of retrieving the right subject
+/// as a typo on the name might return a registry with different message types
+/// and groups.
+pub fn from(name: String) -> Result(Registry(msg, group), Nil) {
+  use table <- try(lamb.from_name(registry_store))
+
+  let query =
+    q.new()
+    |> q.index(name)
+    |> q.record(t.var(1))
+    |> q.map(fn(_index, record) { record })
+
+  case lamb.search(table, query) {
+    [] -> Error(Nil)
+    [registry] -> Ok(registry)
+    [_, ..] ->
+      panic as {
+        "Unexpected error trying to retrieve registry "
+        <> name
+        <> " from ETS table: "
+        <> registry_store
+      }
+  }
+}
+
+/// Registers a subject under a group.
+///
+/// ## Example
+///
+/// ```gleam
+/// let assert Ok(registry) = chip.start(chip.Unnamed)
+///
+/// chip.register(registry, GroupA, subject)
+/// chip.register(registry, GroupB, subject)
+/// chip.register(registry, GroupC, subject)
+/// ```
+///
+/// A subject may be registered under multiple groups but it may only be
+/// registered one time on each group.
+///
+/// It is possibel to register any subject at any point in time but keeping
+/// it under the initialization step of your process may help to keep things
+/// organized and tidy.
 pub fn register(
   registry: Registry(msg, group),
   group: group,
@@ -118,7 +169,7 @@ pub fn members(
 /// ## Example
 ///
 /// ```gleam
-/// let assert Ok(registry) = chip.start()
+/// let assert Ok(registry) = chip.start(chip.Unnamed)
 /// chip.stop(registry)
 /// ```
 pub fn stop(registry: Registry(msg, group)) -> Nil {
@@ -147,7 +198,7 @@ pub type Error {
 type State(msg, group) {
   State(
     // This config dictates how many max tasks to launch on a dispatch.
-    max_concurrency: Int,
+    concurrency: Int,
     // Store for all grouped subjects, the indexed pid helps to identify already monitored processess.
     groups: lamb.Table(#(group, Pid), Subject(msg)),
   )
@@ -160,24 +211,26 @@ type ProcessDown {
 fn init(
   named: Named,
 ) -> actor.InitResult(State(msg, group), Message(msg, group)) {
-  let initialize = fn() {
-    let self = process.new_subject()
-    use Nil <- try(name_registry(self, named))
-    let groups = initialize_store()
-    let concurrency = schedulers()
-    let state = State(concurrency, groups)
-    let selector =
-      process.new_selector()
-      |> process.selecting(self, function.identity)
-      |> process.selecting_anything(process_down)
+  let self = process.new_subject()
 
-    Ok(actor.Ready(state, selector))
+  let table = initialize_named_registries_store()
+
+  case named {
+    Named(name) -> lamb.insert(table, name, self)
+    Unnamed -> Nil
   }
 
-  initialize()
-  |> result.map_error(translate_init_error)
-  |> result.map_error(actor.Failed)
-  |> result.unwrap_both()
+  let concurrency = schedulers()
+  let groups = initialize_groups_store()
+
+  let state = State(concurrency: concurrency, groups: groups)
+
+  let selector =
+    process.new_selector()
+    |> process.selecting(self, function.identity)
+    |> process.selecting_anything(process_down)
+
+  actor.Ready(state, selector)
 }
 
 fn loop(
@@ -234,65 +287,28 @@ fn loop(
   }
 }
 
-fn initialize_store() -> lamb.Table(#(group, Pid), Subject(msg)) {
-  case lamb.create("chip_store_groups", Protected, Bag, False) {
+fn initialize_named_registries_store() -> lamb.Table(
+  String,
+  Registry(msg, group),
+) {
+  case lamb.from_name(registry_store) {
+    Ok(table) -> table
+    Error(Nil) ->
+      case lamb.create(registry_store, Public, Set, True) {
+        Ok(table) -> table
+        Error(_error) ->
+          panic as {
+            "Unexpected error trying to initialize chip's named registries ETS store"
+          }
+      }
+  }
+}
+
+fn initialize_groups_store() -> lamb.Table(#(group, Pid), Subject(msg)) {
+  case lamb.create(group_store, Protected, Bag, False) {
     Ok(groups) -> groups
     Error(_error) ->
-      panic as { "Unexpected error trying to initialize chip's ETS store" }
-  }
-}
-
-fn name_registry(
-  registry: Registry(msg, group),
-  named: Named,
-) -> Result(Nil, Error) {
-  let is_valid_name = fn(name: Atom) {
-    case name == atom.create_from_string("undefined") {
-      True -> Error(InvalidName("undefined"))
-      False -> Ok(Nil)
-    }
-  }
-
-  let is_name_taken = fn(name: Atom) {
-    case process.named(name) {
-      Ok(_pid) -> Error(NameTaken(atom.to_string(name)))
-      Error(Nil) -> Ok(Nil)
-    }
-  }
-
-  let register = fn(pid, name) {
-    case process.register(pid, name) {
-      Ok(Nil) -> Nil
-      Error(Nil) ->
-        panic as {
-          "Unexpected error trying to name registry as: "
-          <> atom.to_string(name)
-        }
-    }
-  }
-
-  case named {
-    Named(name) -> {
-      let pid = process.subject_owner(registry)
-      let name = atom.create_from_string(name)
-      use Nil <- try(is_valid_name(name))
-      use Nil <- try(is_name_taken(name))
-      register(pid, name)
-
-      Ok(Nil)
-    }
-
-    Unnamed -> {
-      Ok(Nil)
-    }
-  }
-}
-
-fn translate_init_error(error) {
-  case error {
-    InvalidName(name) -> "Registry cannot be named " <> name
-
-    NameTaken(name) -> "Name " <> name <> " is already taken by another process"
+      panic as { "Unexpected error trying to initialize chip's subject store" }
   }
 }
 
