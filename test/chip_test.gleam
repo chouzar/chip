@@ -1,6 +1,7 @@
 import artifacts/game.{DrawCard, FireDice, PlayChip}
 import chip
 import gleam/erlang/process
+import gleam/list
 import gleam/otp/supervisor
 import gleeunit
 
@@ -69,7 +70,8 @@ pub fn dispatch_is_applied_over_subjects_test() {
   session_5 |> chip.register(registry, Nil, _)
   session_6 |> chip.register(registry, Nil, _)
 
-  chip.dispatch(registry, Nil, game.next)
+  chip.members(registry, Nil, 50)
+  |> list.each(game.next)
 
   // wait for game session operation to finish
   let assert True = until(fn() { game.current(session_1) }, is: "🪙", for: 50)
@@ -97,14 +99,17 @@ pub fn dispatch_is_applied_over_groups_test() {
   session_5 |> chip.register(registry, RoomC, _)
   session_6 |> chip.register(registry, RoomC, _)
 
-  chip.dispatch(registry, RoomA, fn(subject) { game.next(subject) })
+  chip.members(registry, RoomA, 50)
+  |> list.each(game.next)
 
-  chip.dispatch(registry, RoomB, fn(subject) {
+  chip.members(registry, RoomB, 50)
+  |> list.each(fn(subject) {
     game.next(subject)
     game.next(subject)
   })
 
-  chip.dispatch(registry, RoomC, fn(subject) {
+  chip.members(registry, RoomC, 50)
+  |> list.each(fn(subject) {
     game.next(subject)
     game.next(subject)
     game.next(subject)

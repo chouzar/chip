@@ -17,10 +17,8 @@ import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/function
 import gleam/io
-import gleam/list
 import gleam/option
 import gleam/otp/actor
-import gleam/otp/task
 import gleam/result.{try}
 import gleam/string
 import lamb.{Bag, Protected}
@@ -115,23 +113,6 @@ pub fn members(
   process.call(registry, Members(_, group), timeout)
 }
 
-/// Applies a callback over all registered Subjects.
-///
-/// ## Example
-///
-/// ```gleam
-/// chip.dispatch(registry, fn(subject) {
-///   process.send(subject, message)
-/// })
-/// ```
-pub fn dispatch(
-  registry: Registry(msg, group),
-  group: group,
-  callback: fn(Subject(msg)) -> Nil,
-) -> Nil {
-  process.send(registry, Dispatch(callback, group))
-}
-
 /// Stops the registry.
 ///
 /// ## Example
@@ -154,7 +135,6 @@ pub opaque type Message(msg, group) {
   Register(Subject(msg), group)
   Demonitor(Monitor, Pid)
   Members(Subject(List(Subject(msg))), group)
-  Dispatch(fn(Subject(msg)) -> Nil, group)
   NoOperation(dynamic.Dynamic)
   Stop
 }
@@ -236,18 +216,6 @@ fn loop(
 
       let records: List(Subject(msg)) = lamb.search(state.groups, query)
       process.send(client, records)
-      actor.Continue(state, option.None)
-    }
-
-    Dispatch(callback, group) -> {
-      let query =
-        q.new()
-        |> q.index(#(group, t.any()))
-        |> q.record(t.var(1))
-        |> q.map(fn(_index, record) { record })
-
-      start_dispatch(state.groups, query, state.max_concurrency, callback)
-
       actor.Continue(state, option.None)
     }
 
@@ -341,57 +309,6 @@ fn process_down(message) {
       NoOperation(message)
     }
   }
-}
-
-fn start_dispatch(
-  table: lamb.Table(index, record),
-  query: q.Query(i, r, b),
-  concurrency: Int,
-  callback: fn(Subject(msg)) -> Nil,
-) -> Nil {
-  process.start(
-    running: fn() {
-      table
-      |> lamb.batch(by: concurrency, where: query)
-      |> handle_dispatch_results(callback)
-    },
-    linked: False,
-  )
-
-  Nil
-}
-
-fn continue_dispatch(step: lamb.Step, task: fn(Subject(msg)) -> Nil) -> Nil {
-  lamb.continue(step)
-  |> handle_dispatch_results(task)
-}
-
-fn handle_dispatch_results(
-  partial: lamb.Partial(Subject(msg)),
-  callback: fn(Subject(msg)) -> Nil,
-) {
-  case partial {
-    lamb.Records(records, step) -> {
-      records
-      |> run_batch(callback)
-
-      continue_dispatch(step, callback)
-    }
-
-    lamb.End(records) -> {
-      records
-      |> run_batch(callback)
-    }
-  }
-}
-
-fn run_batch(
-  subjects: List(Subject(msg)),
-  callback: fn(Subject(msg)) -> Nil,
-) -> Nil {
-  subjects
-  |> list.map(fn(subject) { task.async(fn() { callback(subject) }) })
-  |> list.each(fn(task) { task.await(task, 5000) })
 }
 
 @external(erlang, "chip_erlang_ffi", "decode_down_message")

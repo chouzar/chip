@@ -27,15 +27,18 @@ pub fn main() {
 
   // lets assume this is the server process broadcasting a welcome message
   task.async(fn() {
-    chip.dispatch(pubsub, General, fn(client) {
+    chip.members(pubsub, General, 50)
+    |> list.each(fn(client) {
       Event(id: 1, message: "Welcome to General! Follow rules and be nice.")
       |> process.send(client, _)
     })
-    chip.dispatch(pubsub, Coffee, fn(client) {
+    chip.members(pubsub, Coffee, 50)
+    |> list.each(fn(client) {
       Event(id: 2, message: "Ice breaker! Favorite cup of coffee?")
       |> process.send(client, _)
     })
-    chip.dispatch(pubsub, Pets, fn(client) {
+    chip.members(pubsub, Pets, 50)
+    |> list.each(fn(client) {
       Event(id: 3, message: "Pets!")
       |> process.send(client, _)
     })

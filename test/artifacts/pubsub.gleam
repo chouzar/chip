@@ -1,5 +1,6 @@
 import chip
 import gleam/erlang/process
+import gleam/list
 import gleam/otp/supervisor
 
 pub type PubSub(message, channel) =
@@ -27,7 +28,6 @@ pub fn publish(
   channel: channel,
   message: message,
 ) -> Nil {
-  chip.dispatch(pubsub, channel, fn(subscriber) {
-    process.send(subscriber, message)
-  })
+  chip.members(pubsub, channel, 50)
+  |> list.each(fn(subscriber) { process.send(subscriber, message) })
 }

@@ -1,5 +1,6 @@
 import artifacts/game.{DrawCard, FireDice, PlayChip}
 import chip
+import gleam/list
 
 pub type Group {
   GroupA
@@ -17,5 +18,6 @@ pub fn main() {
   chip.register(registry, GroupB, session_b)
   chip.register(registry, GroupA, session_c)
 
-  chip.dispatch(registry, GroupA, fn(session) { game.next(session) })
+  chip.members(registry, GroupA, 50)
+  |> list.each(fn(session) { game.next(session) })
 }
