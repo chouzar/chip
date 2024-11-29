@@ -4,13 +4,13 @@ import gleam/otp/actor
 import gleam/otp/supervisor
 
 pub type Store(message) =
-  chip.Registry(message, Int, Nil)
+  chip.Registry(message, Int)
 
 pub type Id =
   Int
 
 pub fn start() -> Result(Store(message), actor.StartError) {
-  chip.start()
+  chip.start(chip.Unnamed)
 }
 
 pub fn childspec() {
@@ -18,11 +18,13 @@ pub fn childspec() {
 }
 
 pub fn index(store: Store(message), id: Id, subject: process.Subject(message)) {
-  chip.new(subject)
-  |> chip.tag(id)
-  |> chip.register(store, _)
+  chip.register(store, id, subject)
 }
 
 pub fn get(store: Store(message), id: Id) {
-  chip.find(store, id)
+  case chip.members(store, id, 50) {
+    [] -> Error(Nil)
+    [subject] -> Ok(subject)
+    [_, ..] -> panic as "Shouldn't insert more than 1 subject."
+  }
 }

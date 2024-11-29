@@ -30,5 +30,5 @@ pub fn main() {
     )
 
   let assert Ok(registry) = process.receive(self, 500)
-  let assert Ok(_session) = chip.find(registry, 33)
+  let assert [_session] = chip.members(registry, 33, 50)
 }

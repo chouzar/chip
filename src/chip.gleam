@@ -2,10 +2,20 @@
 //// registry that can reference subjects individually or as part of a group. Will also
 //// automatically delist dead processes.
 
+// TODO: Rework docs and test docs.
+// TODO: Have a system for naming registry a global registry table with pids and names.
+// TODO: Remove `new` API in favor of register_as and register_in
+// TODO: Have a system for naming registry a global registry table with pids and names.
+// TODO: Use persistent term? Single table, Multiple tables?
+// TODO: Implement an all subjects function
+// TODO: Implement a dispatch one function
+// TODO: This whole section should be at init time.
+
 import gleam/dynamic
 import gleam/erlang
-import gleam/erlang/atom
+import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/function
 import gleam/io
 import gleam/list
 import gleam/option
@@ -13,7 +23,7 @@ import gleam/otp/actor
 import gleam/otp/task
 import gleam/result.{try}
 import gleam/string
-import lamb
+import lamb.{Bag, Protected}
 import lamb/query as q
 import lamb/query/term as t
 
@@ -36,8 +46,13 @@ import lamb/query/term as t
 /// ```
 ///
 /// By specifying the types we can document the kind of registry we are working with.
-pub type Registry(msg, tag, group) =
-  Subject(Message(msg, tag, group))
+pub type Registry(msg, group) =
+  Subject(Message(msg, group))
+
+pub type Named {
+  Named(String)
+  Unnamed
+}
 
 // API ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
@@ -48,80 +63,15 @@ pub type Registry(msg, tag, group) =
 /// ```gleam
 /// > chip.start()
 /// ```
-pub fn start() -> Result(Registry(msg, tag, group), actor.StartError) {
+pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
+  let init = fn() { init(named) }
   actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
 }
 
-// TODO: Have a system for naming registry a global registry table with pids and names.
-// TODO: Remove `new` API in favor of register_as and register_in
-// TODO: Have a system for naming registry a global registry table with pids and names.
-// TODO: Use persistent term? Single table, Multiple tables?
-// TODO: Implement an all subjects function
-// TODO: Implement a dispatch one function
-pub fn name(
-  registry: Registry(msg, tag, group),
-  name: String,
-) -> Result(Registry(msg, tag, group), actor.StartError) {
-  let pid = process.subject_owner(registry)
-  let name = atom.create_from_string(name)
-
-  case process.register(pid, name) {
-    Ok(Nil) -> Ok(registry)
-    Error(Nil) -> {
-      // The process for the pid no longer exists.
-      // The name has already been registered.
-      // The process already has a name.
-      // The name is the atom undefined, which is reserved by Erlang.
-
-      let reason = process.Abnormal("Process is no longer alive.")
-      Error(actor.InitFailed(reason))
-    }
-  }
-}
-
-pub fn from(_name: String) -> Result(Registry(msg, tag, group), Nil) {
+// TODO: docs + warning on how to properly retrieve values from here.
+// This is not type safe so will require maitenance from the programmer's end.
+pub fn from(_name: String) -> Result(Registry(msg, group), Nil) {
   todo
-}
-
-@external(erlang, "observer", "start")
-pub fn observer() -> Int
-
-/// Creates a new "chip" that can be tagged, grouped and registered.
-///
-/// ## Example
-///
-/// ```gleam
-/// chip.new(subject)
-/// ```
-pub fn new(subject: Subject(msg)) -> Chip(msg, tag, group) {
-  Chip(subject, option.None, option.None)
-}
-
-/// Adds a unique tag to a "chip", it will overwrite any previous subject under the same tag.
-///
-/// ## Example
-///
-/// ```gleam
-/// chip.new(subject)
-/// |> chip.tag("Luis")
-/// ```
-pub fn tag(registrant: Chip(msg, tag, group), tag: tag) -> Chip(msg, tag, group) {
-  Chip(..registrant, tag: option.Some(tag))
-}
-
-/// Adds the "chip" under a group.
-///
-/// ## Example
-///
-/// ```gleam
-/// chip.new(subject)
-/// |> chip.group(General)
-/// ```
-pub fn group(
-  registrant: Chip(msg, tag, group),
-  group: group,
-) -> Chip(msg, tag, group) {
-  Chip(..registrant, group: option.Some(group))
 }
 
 /// Registers a "chip".
@@ -149,37 +99,20 @@ pub fn group(
 /// You may register any subject at any point in time but usually keeping it under the initialization
 /// step of your process (like an Actor's `init` callback) will keep things organized and tidy.
 pub fn register(
-  registry: Registry(msg, tag, group),
-  registrant: Chip(msg, tag, group),
+  registry: Registry(msg, group),
+  group: group,
+  subject: Subject(msg),
 ) -> Nil {
-  process.send(registry, Register(registrant))
+  process.send(registry, Register(subject, group))
 }
 
-/// Retrieves a tagged subject.
-///
-/// ## Example
-///
-/// ```gleam
-/// let assert Ok(subject) = chip.find(registry, "Luis")
-/// ```
-pub fn find(
-  registry: Registry(msg, tag, group),
-  tag,
-) -> Result(Subject(msg), Nil) {
-  let table = process.call(registry, Find(_), 500)
-
-  let select_record = fn(_index, _record) { t.var(1) }
-
-  let query =
-    q.new()
-    |> q.index(tag)
-    |> q.record(#(t.any(), t.var(1)))
-    |> q.map(select_record)
-  case lamb.search(table, query) {
-    [] -> Error(Nil)
-    [subject] -> Ok(subject)
-    [_, ..] -> panic as "impossible lookup on tagged table."
-  }
+/// TODO: members docs.
+pub fn members(
+  registry: Registry(msg, group),
+  group: group,
+  timeout: Int,
+) -> List(Subject(msg)) {
+  process.call(registry, Members(_, group), timeout)
 }
 
 /// Applies a callback over all registered Subjects.
@@ -192,27 +125,11 @@ pub fn find(
 /// })
 /// ```
 pub fn dispatch(
-  registry: Registry(msg, tag, group),
-  callback: fn(Subject(msg)) -> Nil,
-) -> Nil {
-  process.send(registry, Dispatch(callback))
-}
-
-/// Applies a callback over a group.
-///
-/// ## Example
-///
-/// ```gleam
-/// chip.dispatch_group(registry, Pets, fn(subject) {
-///   process.send(subject, message)
-/// })
-/// ```
-pub fn dispatch_group(
-  registry: Registry(msg, tag, group),
+  registry: Registry(msg, group),
   group: group,
   callback: fn(Subject(msg)) -> Nil,
 ) -> Nil {
-  process.send(registry, DispatchGroup(callback, group))
+  process.send(registry, Dispatch(callback, group))
 }
 
 /// Stops the registry.
@@ -223,7 +140,7 @@ pub fn dispatch_group(
 /// let assert Ok(registry) = chip.start()
 /// chip.stop(registry)
 /// ```
-pub fn stop(registry: Registry(msg, tag, group)) -> Nil {
+pub fn stop(registry: Registry(msg, group)) -> Nil {
   process.send(registry, Stop)
 }
 
@@ -233,36 +150,26 @@ type Monitor =
   erlang.Reference
 
 /// Chip's internal message type.
-pub opaque type Message(msg, tag, group) {
-  Register(Chip(msg, tag, group))
+pub opaque type Message(msg, group) {
+  Register(Subject(msg), group)
   Demonitor(Monitor, Pid)
-  Find(Subject(lamb.Table(tag, #(Pid, Subject(msg)))))
-  Dispatch(fn(Subject(msg)) -> Nil)
-  DispatchGroup(fn(Subject(msg)) -> Nil, group)
+  Members(Subject(List(Subject(msg))), group)
+  Dispatch(fn(Subject(msg)) -> Nil, group)
   NoOperation(dynamic.Dynamic)
   Stop
 }
 
-/// A "chip" used for registration. Check the [new](#new) function.
-pub opaque type Chip(msg, tag, group) {
-  Chip(
-    subject: Subject(msg),
-    tag: option.Option(tag),
-    group: option.Option(group),
-  )
+pub type Error {
+  InvalidName(String)
+  NameTaken(String)
 }
 
-type State(msg, tag, group) {
+type State(msg, group) {
   State(
     // This config dictates how many max tasks to launch on a dispatch.
     max_concurrency: Int,
-    // TODO: If already storing the subject why do we need the pid?
-    // Store for all registered subjects.
-    registered: lamb.Table(Pid, Subject(msg)),
-    // Store for all tagged subjects.
-    tagged: lamb.Table(tag, #(Pid, Subject(msg))),
-    // Store for all grouped subjects.
-    grouped: lamb.Table(group, #(Pid, Subject(msg))),
+    // Store for all grouped subjects, the indexed pid helps to identify already monitored processess.
+    groups: lamb.Table(#(group, Pid), Subject(msg)),
   )
 }
 
@@ -270,96 +177,76 @@ type ProcessDown {
   ProcessDown(monitor: Monitor, pid: Pid)
 }
 
-fn init() -> actor.InitResult(State(msg, tag, group), Message(msg, tag, group)) {
-  // The process.selecting_process_down function accumulated selections until it made
-  // the actor non-responsive.
-  let process_down = fn(message) {
-    case decode_down_message(message) {
-      Ok(ProcessDown(monitor, pid)) -> {
-        Demonitor(monitor, pid)
-      }
+fn init(
+  named: Named,
+) -> actor.InitResult(State(msg, group), Message(msg, group)) {
+  let initialize = fn() {
+    let self = process.new_subject()
+    use Nil <- try(name_registry(self, named))
+    let groups = initialize_store()
+    let concurrency = schedulers()
+    let state = State(concurrency, groups)
+    let selector =
+      process.new_selector()
+      |> process.selecting(self, function.identity)
+      |> process.selecting_anything(process_down)
 
-      Error(Nil) -> {
-        NoOperation(message)
-      }
-    }
+    Ok(actor.Ready(state, selector))
   }
 
-  let assert Ok(registered) =
-    lamb.create(
-      name: "chip_registry",
-      access: lamb.Protected,
-      kind: lamb.Set,
-      registered: False,
-    )
-
-  let assert Ok(tagged) =
-    lamb.create(
-      name: "chip_registry_tagged",
-      access: lamb.Protected,
-      kind: lamb.Set,
-      registered: False,
-    )
-
-  let assert Ok(grouped) =
-    lamb.create(
-      name: "chip_registry_group",
-      access: lamb.Protected,
-      kind: lamb.Bag,
-      registered: False,
-    )
-
-  actor.Ready(
-    State(
-      max_concurrency: schedulers(),
-      registered: registered,
-      tagged: tagged,
-      grouped: grouped,
-    ),
-    process.new_selector()
-      |> process.selecting_anything(process_down),
-  )
+  initialize()
+  |> result.map_error(translate_init_error)
+  |> result.map_error(actor.Failed)
+  |> result.unwrap_both()
 }
 
 fn loop(
-  message: Message(msg, tag, group),
-  state: State(msg, tag, group),
-) -> actor.Next(Message(msg, tag, group), State(msg, tag, group)) {
+  message: Message(msg, group),
+  state: State(msg, group),
+) -> actor.Next(Message(msg, group), State(msg, group)) {
   case message {
-    Register(registrant) -> {
-      let Nil = insert(state, registrant)
+    Register(subject, group) -> {
+      let pid = process.subject_owner(subject)
+      // TODO: Lets avoid creating multiple independent monitors if pid is already registered
+      let _monitor = process.monitor_process(pid)
+
+      lamb.insert(state.groups, #(group, pid), subject)
+
       actor.Continue(state, option.None)
     }
 
     Demonitor(monitor, pid) -> {
-      let Nil = delete(state, monitor, pid)
-      actor.Continue(state, option.None)
-    }
+      let Nil = demonitor(monitor)
 
-    Find(client) -> {
-      process.send(client, state.tagged)
-      actor.Continue(state, option.None)
-    }
-
-    Dispatch(callback) -> {
       let query =
         q.new()
+        |> q.index(#(t.any(), pid))
+
+      lamb.remove(state.groups, where: query)
+
+      actor.Continue(state, option.None)
+    }
+
+    Members(client, group) -> {
+      let query =
+        q.new()
+        |> q.index(#(group, t.any()))
         |> q.record(t.var(1))
-        |> q.map(fn(_index, _record) { t.var(1) })
+        |> q.map(fn(_index, record) { record })
 
-      start_dispatch(state.registered, query, state.max_concurrency, callback)
-
+      let records: List(Subject(msg)) = lamb.search(state.groups, query)
+      process.send(client, records)
       actor.Continue(state, option.None)
     }
 
-    DispatchGroup(callback, group) -> {
+    Dispatch(callback, group) -> {
       let query =
         q.new()
-        |> q.index(group)
-        |> q.record(#(t.any(), t.var(1)))
-        |> q.map(fn(_index, _record) { t.var(1) })
+        |> q.index(#(group, t.any()))
+        |> q.record(t.var(1))
+        |> q.map(fn(_index, record) { record })
 
-      start_dispatch(state.grouped, query, state.max_concurrency, callback)
+      start_dispatch(state.groups, query, state.max_concurrency, callback)
 
       actor.Continue(state, option.None)
     }
@@ -379,33 +266,81 @@ fn loop(
   }
 }
 
-fn insert(
-  state: State(msg, tag, group),
-  registrant: Chip(msg, tag, group),
-) -> Nil {
-  let pid = process.subject_owner(registrant.subject)
-  let _monitor = process.monitor_process(pid)
-
-  lamb.insert(state.registered, pid, registrant.subject)
-
-  option.map(registrant.tag, fn(tag) {
-    lamb.insert(state.tagged, tag, #(pid, registrant.subject))
-  })
-
-  option.map(registrant.group, fn(group) {
-    lamb.insert(state.grouped, group, #(pid, registrant.subject))
-  })
-
-  Nil
+fn initialize_store() -> lamb.Table(#(group, Pid), Subject(msg)) {
+  case lamb.create("chip_store_groups", Protected, Bag, False) {
+    Ok(groups) -> groups
+    Error(_error) ->
+      panic as { "Unexpected error trying to initialize chip's ETS store" }
+  }
 }
 
-fn delete(state: State(msg, tag, group), monitor: Monitor, pid: Pid) -> Nil {
-  let Nil = demonitor(monitor)
+fn name_registry(
+  registry: Registry(msg, group),
+  named: Named,
+) -> Result(Nil, Error) {
+  let is_valid_name = fn(name: Atom) {
+    case name == atom.create_from_string("undefined") {
+      True -> Error(InvalidName("undefined"))
+      False -> Ok(Nil)
+    }
+  }
 
-  lamb.remove(state.registered, where: q.new() |> q.index(pid))
-  lamb.remove(state.tagged, where: q.new() |> q.record(#(pid, t.any())))
-  lamb.remove(state.grouped, where: q.new() |> q.record(#(pid, t.any())))
-  Nil
+  let is_name_taken = fn(name: Atom) {
+    case process.named(name) {
+      Ok(_pid) -> Error(NameTaken(atom.to_string(name)))
+      Error(Nil) -> Ok(Nil)
+    }
+  }
+
+  let register = fn(pid, name) {
+    case process.register(pid, name) {
+      Ok(Nil) -> Nil
+      Error(Nil) ->
+        panic as {
+          "Unexpected error trying to name registry as: "
+          <> atom.to_string(name)
+        }
+    }
+  }
+
+  case named {
+    Named(name) -> {
+      let pid = process.subject_owner(registry)
+      let name = atom.create_from_string(name)
+      use Nil <- try(is_valid_name(name))
+      use Nil <- try(is_name_taken(name))
+      register(pid, name)
+
+      Ok(Nil)
+    }
+
+    Unnamed -> {
+      Ok(Nil)
+    }
+  }
+}
+
+fn translate_init_error(error) {
+  case error {
+    InvalidName(name) -> "Registry cannot be named " <> name
+
+    NameTaken(name) -> "Name " <> name <> " is already taken by another process"
+  }
+}
+
+// TODO: Change back to selecting_process_down
+// The process.selecting_process_down function accumulates selections
+// and would rather avoid this memory hit.
+fn process_down(message) {
+  case decode_down_message(message) {
+    Ok(ProcessDown(monitor, pid)) -> {
+      Demonitor(monitor, pid)
+    }
+
+    Error(Nil) -> {
+      NoOperation(message)
+    }
+  }
 }
 
 fn start_dispatch(

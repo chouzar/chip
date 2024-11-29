@@ -3,10 +3,10 @@ import gleam/erlang/process
 import gleam/otp/supervisor
 
 pub type PubSub(message, channel) =
-  chip.Registry(message, Nil, channel)
+  chip.Registry(message, channel)
 
 pub fn start() {
-  chip.start()
+  chip.start(chip.Unnamed)
 }
 
 pub fn childspec() {
@@ -19,9 +19,7 @@ pub fn subscribe(
   channel: channel,
   subject: process.Subject(message),
 ) -> Nil {
-  chip.new(subject)
-  |> chip.group(channel)
-  |> chip.register(pubsub, _)
+  chip.register(pubsub, channel, subject)
 }
 
 pub fn publish(
@@ -29,7 +27,7 @@ pub fn publish(
   channel: channel,
   message: message,
 ) -> Nil {
-  chip.dispatch_group(pubsub, channel, fn(subscriber) {
+  chip.dispatch(pubsub, channel, fn(subscriber) {
     process.send(subscriber, message)
   })
 }

@@ -4,7 +4,7 @@ import gleam/erlang/process
 import gleam/otp/supervisor
 
 type Registry =
-  chip.Registry(game.Message, Int, Nil)
+  chip.Registry(game.Message, Int)
 
 pub type Context {
   Context(caller: process.Subject(Registry), registry: Registry, id: Int)
@@ -12,9 +12,11 @@ pub type Context {
 
 pub fn registry() {
   // The registry childspec first starts the registry.
-  supervisor.worker(fn(_caller: process.Subject(Registry)) { chip.start() })
-  // After starting we transform the parameter from caller into a context for 
-  // the sessions we want to register. 
+  supervisor.worker(fn(_caller: process.Subject(Registry)) {
+    chip.start(chip.Unnamed)
+  })
+  // After starting we transform the parameter from caller into a context for
+  // the sessions we want to register.
   |> supervisor.returning(fn(caller, registry) { Context(caller, registry, 1) })
 }
 

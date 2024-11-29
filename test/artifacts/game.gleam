@@ -5,7 +5,7 @@ import gleam/otp/actor
 import gleam/otp/supervisor
 
 type SessionRegistry =
-  chip.Registry(Message, Int, Nil)
+  chip.Registry(Message, Int)
 
 type Game =
   process.Subject(Message)
@@ -57,11 +57,7 @@ fn init(registry, id, action) {
   let self = process.new_subject()
 
   // Register the counter under an id on initialization
-  chip.register(
-    registry,
-    chip.new(self)
-      |> chip.tag(id),
-  )
+  chip.register(registry, id, self)
 
   // The registry may send messages through the self subject to this actor
   // adding self to this actor selector will allow us to handle those messages.

@@ -22,20 +22,20 @@ pub fn main() {
   let client = process.new_subject()
 
   // client is interested in coffee and pets
-  chip.register(pubsub, chip.new(client) |> chip.group(Coffee))
-  chip.register(pubsub, chip.new(client) |> chip.group(Pets))
+  chip.register(pubsub, Coffee, client)
+  chip.register(pubsub, Pets, client)
 
   // lets assume this is the server process broadcasting a welcome message
   task.async(fn() {
-    chip.dispatch_group(pubsub, General, fn(client) {
+    chip.dispatch(pubsub, General, fn(client) {
       Event(id: 1, message: "Welcome to General! Follow rules and be nice.")
       |> process.send(client, _)
     })
-    chip.dispatch_group(pubsub, Coffee, fn(client) {
+    chip.dispatch(pubsub, Coffee, fn(client) {
       Event(id: 2, message: "Ice breaker! Favorite cup of coffee?")
       |> process.send(client, _)
     })
-    chip.dispatch_group(pubsub, Pets, fn(client) {
+    chip.dispatch(pubsub, Pets, fn(client) {
       Event(id: 3, message: "Pets!")
       |> process.send(client, _)
     })
