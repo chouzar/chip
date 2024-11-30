@@ -212,11 +212,6 @@ pub opaque type Message(msg, group) {
   Stop
 }
 
-pub type Error {
-  InvalidName(String)
-  NameTaken(String)
-}
-
 type State(msg, group) {
   State(
     // This config dictates how many max tasks to launch on a dispatch.
