@@ -3,48 +3,55 @@
 [![Package Version](https://img.shields.io/hexpm/v/chip)](https://hex.pm/packages/chip)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
-Chip is a performant local registry that can hold to a set of [subjects](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject) individually or as part of a group. 
+Chip is a performant local registry that can hold to a set of
+[subjects](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject)
+as part of a group.
 
 ## Example
 
-One of the most useful use cases for chip is broadcasting messages to registered subjects:
+We can categorize subjects in groups, then send messages to them:
 
 ```gleam
 import artifacts/game.{DrawCard, FireDice, PlayChip}
 import chip
+import gleam/list
+
+pub type Group {
+  GroupA
+  GroupB
+}
 
 pub fn main() {
-  let assert Ok(registry) = chip.start()
+  let assert Ok(registry) = chip.start(chip.Unnamed)
 
   let assert Ok(session_a) = game.start(DrawCard)
   let assert Ok(session_b) = game.start(FireDice)
   let assert Ok(session_c) = game.start(PlayChip)
 
-  chip.register(registry, chip.new(session_a))
-  chip.register(registry, chip.new(session_b))
-  chip.register(registry, chip.new(session_c))
+  chip.register(registry, GroupA, session_a)
+  chip.register(registry, GroupB, session_b)
+  chip.register(registry, GroupA, session_c)
 
-  chip.dispatch(registry, fn(session) {
-    game.next(session)
-  })
+  chip.members(registry, GroupA, 50)
+  |> list.each(fn(session) { game.next(session) })
 }
 ```
 
-## Features
+For more check the [docs and guildelines](https://hexdocs.pm/chip/).
 
-Chip was designed with a very minimal but practical feature set:
+## Development
 
-* Subjects may be individually retrieved via tags.
-* It is also possible to dispatch actions to groups of Subjects.
-* Chip will automatically delist dead processes.
+New additions to the API will be considered with care. Features are
+[documented as Issues](https://github.com/chouzar/chip/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement)
+on the project's repo, if you have questions or like to see a new feature please open an issue.
 
-For more possible use-cases check the documented guidelines.
+For benchmarks run:
 
-## Development 
+```bash
+gleam run --module benchmark
+```
 
-From now on updates will focus on reliability and performance, but new additions to the API will be considered with care. Features are [documented as Issues](https://github.com/chouzar/chip/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement) on the project's repo, if you have questions or like to se a new feature please open an issue.
-
-### Previous Art 
+### Previous Art
 
 This registry takes and combines some ideas from:
 

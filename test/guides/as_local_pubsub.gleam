@@ -18,14 +18,14 @@ pub type Event {
 pub fn main() {
   let assert Ok(pubsub) = pubsub.start()
 
-  // for this scenario, out of simplicity, all clients are the current process.
+  // For this scenario, out of simplicity, all clients are the current process.
   let client = process.new_subject()
 
-  // client is interested in coffee and pets
+  // Client is interested in coffee and pets.
   chip.register(pubsub, Coffee, client)
   chip.register(pubsub, Pets, client)
 
-  // lets assume this is the server process broadcasting a welcome message
+  // Lets assume this is the server process broadcasting a welcome message.
   task.async(fn() {
     chip.members(pubsub, General, 50)
     |> list.each(fn(client) {
@@ -44,9 +44,8 @@ pub fn main() {
     })
   })
 
-  // it is then each client's responsability to listen to incoming messages
-
-  // client only receives coffee and pets messages
+  // It is then each client's responsability to listen to incoming messages,
+  // our previous client is only subscribed to coffee and pets, so it only receives those messages.
   let assert True =
     listen_for_messages(client, [])
     |> list.all(fn(message) {
@@ -59,22 +58,24 @@ pub fn main() {
 }
 
 fn listen_for_messages(client, messages) -> List(String) {
-  // this function will listen until messages stop arriving for 100 milliseconds
+  // This function will listen until messages stop arriving for 100 milliseconds.
 
-  // a selector is useful to transform our Events into types a client expects (String).
+  // A selector is useful to transform our Events into types a client expects,
+  // in this case the client can only receive String messages so we cast
+  // events into strings with the `to_string` function.
   let selector =
     process.new_selector()
     |> process.selecting(client, to_string)
 
   case process.select(selector, 100) {
     Ok(message) ->
-      // a message was received, capture it and attempt to listen for another message
+      // A message was received, capture it and attempt to listen for another message.
       message
       |> list.prepend(messages, _)
       |> listen_for_messages(client, _)
 
     Error(Nil) ->
-      // a message was not received, stop listening and return captured messages in order
+      // A message was not received, stop listening and return captured messages in order.
       messages
       |> list.reverse()
   }

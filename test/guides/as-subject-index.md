@@ -1,6 +1,10 @@
 # Chip as a session index
 
-The main purpose of the process index is to be able to "track" individual subjects through an identifier in your application. The identifier may be an integer, string or even a union type if you only need few records.
+We may use chip to track individual subjects through an identifier. The
+identifier may be an integer, string or even a union type if you only
+need few records.
+
+This pattern would be a way of re-defining chip as an indexed store:
 
 ```gleam
 import chip
@@ -9,13 +13,13 @@ import gleam/otp/actor
 import gleam/otp/supervisor
 
 pub type Store(message) =
-  chip.Registry(message, Int, Nil)
+  chip.Registry(message, Int)
 
 pub type Id =
   Int
 
 pub fn start() -> Result(Store(message), actor.StartError) {
-  chip.start()
+  chip.start(chip.Unnamed)
 }
 
 pub fn childspec() {
@@ -23,19 +27,20 @@ pub fn childspec() {
 }
 
 pub fn index(store: Store(message), id: Id, subject: process.Subject(message)) {
-  chip.new(subject)
-  |> chip.tag(id)
-  |> chip.register(store, _)
+  chip.register(store, id, subject)
 }
 
 pub fn get(store: Store(message), id: Id) {
-  chip.find(store, id)
+  case chip.members(store, id, 50) {
+    [] -> Error(Nil)
+    [subject] -> Ok(subject)
+    [_, ..] -> panic as "Shouldn't insert more than 1 subject."
+  }
 }
 ```
 
-Probably one of the most common uses cases for chip will involve looking up for subjects in your system. 
-
-For example, in a web app we may add the registry as part of our app context. 
+It may be used to retrieve information from out of bound subjects. For example,
+in a web app we may add the registry as part of our app context:
 
 ```gleam
 import artifacts/game.{DrawCard}
@@ -74,4 +79,5 @@ fn render_error() {
 }
 ```
 
-Of course, this ability to directly reference subjects is not very useful without a supervision tree, because if the subject dies we can no longer send messages to it. Check the [supervision guideline](as-part-of-supervisor.html) for more. 
+Of course, if our sessions die we can no longer reference them through the index.
+For process restart strategies check the [supervision guideline](as-part-of-supervisor.html).
