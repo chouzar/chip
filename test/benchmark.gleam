@@ -1,13 +1,9 @@
 type Scenario {
-  Find
-  Dispatch
-  DispatchGroup
+  Members
 }
 
 pub fn main() {
-  performance(Find)
-  performance(Dispatch)
-  performance(DispatchGroup)
+  performance(Members)
   memory()
 }
 

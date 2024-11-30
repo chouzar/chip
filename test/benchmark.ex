@@ -17,103 +17,31 @@ defmodule Chip.Benchmark.Performance do
 
     scenario =
       case scenario do
-        :find ->
+        :members ->
           %{
-            "a 10 chip.find" => {
-              fn {registry, id, _group} -> @chip.find(registry, id) end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..10) end,
+            "a chip.members, retrieve 10" => {
+              fn {registry, id, _group} -> @chip.members(registry, id, 5000) end,
+              before_scenario: fn _set -> before_scenario(1..10) end,
               before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
+              after_scenario: fn {registry, _set} -> after_scenario(registry) end
             },
-            "b 100 chip.find" => {
-              fn {registry, id, _group} -> @chip.find(registry, id) end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..100) end,
+            "b chip.members, retrieve 100" => {
+              fn {registry, id, _group} -> @chip.members(registry, id, 5000) end,
+              before_scenario: fn _set -> before_scenario(1..100) end,
               before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
+              after_scenario: fn {registry, _set} -> after_scenario(registry) end
             },
-            "c 1000 chip.find" => {
-              fn {registry, id, _group} -> @chip.find(registry, id) end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..1000) end,
+            "c chip.members, retrieve 1000" => {
+              fn {registry, id, _group} -> @chip.members(registry, id, 5000) end,
+              before_scenario: fn _set -> before_scenario(1..1000) end,
               before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
+              after_scenario: fn {registry, _set} -> after_scenario(registry) end
             },
-            "d 10000 chip.find" => {
-              fn {registry, id, _group} -> @chip.find(registry, id) end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..10000) end,
+            "d chip.members, retrieve 10000" => {
+              fn {registry, id, _group} -> @chip.members(registry, id, 10_000) end,
+              before_scenario: fn _set -> before_scenario(1..10000) end,
               before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            }
-          }
-
-        :dispatch ->
-          %{
-            "a 10 chip.dispatch" => {
-              fn {registry, _id, _group} ->
-                @chip.dispatch(registry, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..10) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
-            "b 100 chip.dispatch" => {
-              fn {registry, _id, _group} ->
-                @chip.dispatch(registry, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..100) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
-            "c 1000 chip.dispatch" => {
-              fn {registry, _id, _group} ->
-                @chip.dispatch(registry, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..1000) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
-            "d 10000 chip.dispatch" => {
-              fn {registry, _id, _group} ->
-                @chip.dispatch(registry, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..10000) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            }
-          }
-
-        :dispatch_group ->
-          %{
-            "a 10 chip.dispatch_group" => {
-              fn {registry, _id, group} ->
-                @chip.dispatch_group(registry, group, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..10) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
-            "b 100 chip.dispatch_group" => {
-              fn {registry, _id, group} ->
-                @chip.dispatch_group(registry, group, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..100) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
-            "c 1000 chip.dispatch_group" => {
-              fn {registry, _id, group} ->
-                @chip.dispatch_group(registry, group, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..1000) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
-            },
-            "d 10000 chip.dispatch_group" => {
-              fn {registry, _id, group} ->
-                @chip.dispatch_group(registry, group, fn subject -> @clock.increment(subject) end)
-              end,
-              before_scenario: fn _set -> before_scenario(@chip, 1..10000) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end
+              after_scenario: fn {registry, _set} -> after_scenario(registry) end
             }
           }
       end
@@ -128,12 +56,12 @@ defmodule Chip.Benchmark.Performance do
     )
   end
 
-  defp before_scenario(module, set) do
-    {:ok, registry} = module.start()
+  defp before_scenario(set) do
+    {:ok, registry} = @chip.start(:unnamed)
 
     for id <- set do
       group = Enum.random([:group_a, :group_b, :group_c])
-      @clock.start(registry, id, group, 0)
+      @clock.start(registry, group, 0)
 
       if Integer.mod(id, 5000) == 0 do
         :ok = wait_for_clear_message_queue(registry)
@@ -147,8 +75,8 @@ defmodule Chip.Benchmark.Performance do
     {registry, Enum.random(set), Enum.random([:group_a, :group_b, :group_c])}
   end
 
-  defp after_scenario(module, registry) do
-    module.stop(registry)
+  defp after_scenario(registry) do
+    @chip.stop(registry)
     IO.puts("")
     nil
   end
@@ -183,7 +111,7 @@ defmodule Chip.Benchmark.Performance do
 end
 
 defmodule Chip.Benchmark.Memory do
-  @clock :benchmark@clock
+  @clock :artifacts@clock
   @chip :chip
   @process :gleam@erlang@process
 
@@ -194,7 +122,7 @@ defmodule Chip.Benchmark.Memory do
     size = unit_measurement()
     IO.puts("   Unit of measurement: #{size}")
 
-    {:ok, registry} = @chip.start()
+    {:ok, registry} = @chip.start(:unnamed)
 
     IO.puts("\n--- Rough memory measurements ---\n")
 
@@ -206,7 +134,7 @@ defmodule Chip.Benchmark.Memory do
 
     for id <- set do
       group = Enum.random([:group_a, :group_b, :group_c])
-      @clock.start(registry, id, group, 0)
+      @clock.start(registry, group, 0)
 
       if Integer.mod(id, 5000) == 0 do
         :ok = wait_for_clear_message_queue(registry)
@@ -220,9 +148,14 @@ defmodule Chip.Benchmark.Memory do
     subject_info(registry) |> display_info()
 
     for id <- set do
-      @chip.dispatch(registry, fn subject ->
-        @clock.stop(subject)
-      end)
+      @chip.members(registry, :group_a, 5000)
+      |> Enum.each(&@clock.stop(&1))
+
+      @chip.members(registry, :group_b, 5000)
+      |> Enum.each(&@clock.stop(&1))
+
+      @chip.members(registry, :group_c, 5000)
+      |> Enum.each(&@clock.stop(&1))
 
       if Integer.mod(id, 5000) == 0 do
         :ok = wait_demonitor(registry)
