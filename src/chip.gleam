@@ -155,7 +155,21 @@ pub fn register(
   process.send(registry, Register(subject, group))
 }
 
-/// TODO: members docs.
+/// Retrieves all subjects from a given group. The order of retrieved
+/// subjects is not guaranteed.
+///
+/// ## Example
+///
+/// ```gleam
+/// let assert Ok(registry) = chip.start(chip.Unnamed)
+///
+/// chip.register(registry, GroupA, subject)
+/// chip.register(registry, GroupB, subject)
+/// chip.register(registry, GroupA, subject)
+///
+/// let assert [_, _] = chip.members(registry, GroupA, 50)
+/// let assert [_] = chip.members(registry, GroupB, 50)
+/// ```
 pub fn members(
   registry: Registry(msg, group),
   group: group,
