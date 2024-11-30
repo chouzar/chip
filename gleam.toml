@@ -1,5 +1,5 @@
 name = "chip"
-version = "0.9.0"
+version = "1.0.0"
 description = "A Gleam registry library"
 licences = ["Apache-2.0"]
 
@@ -7,7 +7,7 @@ licences = ["Apache-2.0"]
 # your project to the Hex package manager.
 #
 repository = { type = "github", user = "chouzar", repo = "chip" }
-gleam = ">= 1.0.0"
+gleam = ">= 1.4.0"
 # links = [{ title = "Website", href = "https://gleam.run" }]
 
 [documentation]
