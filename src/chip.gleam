@@ -175,7 +175,15 @@ pub fn members(
   group: group,
   timeout: Int,
 ) -> List(Subject(msg)) {
-  process.call(registry, Members(_, group), timeout)
+  let group_store = process.call(registry, GroupStore(_), timeout)
+
+  let query =
+    q.new()
+    |> q.index(#(group, t.any()))
+    |> q.record(t.var(1))
+    |> q.map(fn(_index, record) { record })
+
+  lamb.search(group_store, query)
 }
 
 /// Stops the registry.
@@ -199,7 +207,7 @@ type Monitor =
 pub opaque type Message(msg, group) {
   Register(Subject(msg), group)
   Demonitor(Monitor, Pid)
-  Members(Subject(List(Subject(msg))), group)
+  GroupStore(Subject(lamb.Table(#(group, Pid), Subject(msg))))
   NoOperation(dynamic.Dynamic)
   Stop
 }
@@ -274,15 +282,8 @@ fn loop(
       actor.Continue(state, option.None)
     }
 
-    Members(client, group) -> {
-      let query =
-        q.new()
-        |> q.index(#(group, t.any()))
-        |> q.record(t.var(1))
-        |> q.map(fn(_index, record) { record })
-
-      let records: List(Subject(msg)) = lamb.search(state.groups, query)
-      process.send(client, records)
+    GroupStore(client) -> {
+      process.send(client, state.groups)
       actor.Continue(state, option.None)
     }
 
