@@ -54,7 +54,7 @@ pub fn can_retrieve_all_registered_subjects_test() {
   let assert [_, _, _] = chip.members(registry, RoomC, 50)
 }
 
-pub fn can_retrieve_different_subjects_of_same_process() {
+pub fn can_retrieve_different_subjects_of_same_process_test() {
   let assert Ok(registry) = chip.start(chip.Unnamed)
 
   process.new_subject() |> chip.register(registry, Nil, _)
