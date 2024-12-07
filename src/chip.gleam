@@ -255,6 +255,12 @@ fn loop(
   state: State(msg, group),
 ) -> actor.Next(Message(msg, group), State(msg, group)) {
   case message {
+    GroupStore(client) -> {
+      // priority is given through selective receive
+      process.send(client, state.groups)
+      actor.Continue(state, option.None)
+    }
+
     Register(subject, group) -> {
       let pid = process.subject_owner(subject)
       // TODO: Lets avoid creating multiple independent monitors if pid is already registered
@@ -274,11 +280,6 @@ fn loop(
 
       lamb.remove(state.groups, where: query)
 
-      actor.Continue(state, option.None)
-    }
-
-    GroupStore(client) -> {
-      process.send(client, state.groups)
       actor.Continue(state, option.None)
     }
 
