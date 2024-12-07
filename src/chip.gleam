@@ -258,7 +258,9 @@ fn loop(
     GroupStore(client) -> {
       // priority is given through selective receive
       process.send(client, state.groups)
-      actor.Continue(state, option.None)
+
+      state
+      |> actor.continue()
     }
 
     Register(subject, group) -> {
@@ -268,7 +270,8 @@ fn loop(
 
       lamb.insert(state.groups, #(group, pid), subject)
 
-      actor.Continue(state, option.None)
+      state
+      |> actor.continue()
     }
 
     Demonitor(monitor, pid) -> {
@@ -280,7 +283,8 @@ fn loop(
 
       lamb.remove(state.groups, where: query)
 
-      actor.Continue(state, option.None)
+      state
+      |> actor.continue()
     }
 
     NoOperation(message) -> {
@@ -289,7 +293,8 @@ fn loop(
         <> string.inspect(message),
       )
 
-      actor.Continue(state, option.None)
+      state
+      |> actor.continue()
     }
 
     Stop -> {
