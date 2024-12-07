@@ -3,7 +3,7 @@ type Scenario {
 }
 
 pub fn main() {
-  performance(Members)
+  //performance(Members)
   memory()
 }
 

@@ -4,15 +4,17 @@ defmodule Chip.Benchmark.Performance do
   @process :gleam@erlang@process
 
   def run(_scenario) do
+    inputs = %{"10" => 10, "100" => 100, "1000" => 1000, "10000" => 10_000}
+
     Benchee.run(
       %{
         "chip.members" => fn {registry, id, _group} -> @chip.members(registry, id, 100) end
       },
-      inputs: %{"10_000" => 10_000},
+      inputs: inputs,
       before_scenario: fn set -> before_scenario(1..set) end,
       before_each: fn {registry, set} -> before_each(registry, set) end,
       after_scenario: fn {registry, _set} -> after_scenario(registry) end,
-      time: 10,
+      time: 5,
       print: %{configuration: false}
     )
   end
@@ -88,8 +90,8 @@ defmodule Chip.Benchmark.Memory do
     IO.puts("\n--- Rough memory measurements ---\n")
 
     IO.puts("   Before registration...")
-    IO.puts("     self:")
-    process_info(self()) |> display_info()
+    # IO.puts("     self:")
+    # process_info(self()) |> display_info()
     IO.puts("     registry:")
     subject_info(registry) |> display_info()
 
@@ -103,36 +105,36 @@ defmodule Chip.Benchmark.Memory do
     end
 
     IO.puts("   After registration...")
-    IO.puts("     self:")
-    process_info(self()) |> display_info()
+    # IO.puts("     self:")
+    # process_info(self()) |> display_info()
     IO.puts("     registry:")
     subject_info(registry) |> display_info()
 
-    @chip.members(registry, :group_a, 5000)
-    |> Enum.each(fn clock ->
-      @clock.stop(clock)
-      :ok = wait_for_clear_message_queue(registry)
-    end)
+    # @chip.members(registry, :group_a, 5000)
+    # |> Enum.each(fn clock ->
+    #   @clock.stop(clock)
+    #   :ok = wait_for_clear_message_queue(registry)
+    # end)
 
-    @chip.members(registry, :group_b, 25000)
-    |> Enum.each(fn clock ->
-      @clock.stop(clock)
-      :ok = wait_for_clear_message_queue(registry)
-    end)
+    # @chip.members(registry, :group_b, 25000)
+    # |> Enum.each(fn clock ->
+    #   @clock.stop(clock)
+    #   :ok = wait_for_clear_message_queue(registry)
+    # end)
 
-    @chip.members(registry, :group_c, 35000)
-    |> Enum.each(fn clock ->
-      @clock.stop(clock)
-      :ok = wait_for_clear_message_queue(registry)
-    end)
+    # @chip.members(registry, :group_c, 35000)
+    # |> Enum.each(fn clock ->
+    #   @clock.stop(clock)
+    #   :ok = wait_for_clear_message_queue(registry)
+    # end)
 
-    :ok = wait_demonitor(registry)
+    # :ok = wait_demonitor(registry)
 
-    IO.puts("   After demonitoring...")
-    IO.puts("     self:")
-    process_info(self()) |> display_info()
-    IO.puts("     registry:")
-    subject_info(registry) |> display_info()
+    # IO.puts("   After demonitoring...")
+    # IO.puts("     self:")
+    # process_info(self()) |> display_info()
+    # IO.puts("     registry:")
+    # subject_info(registry) |> display_info()
 
     IO.puts("\n----------------------------------- THE END -----------------------------------\n")
   end
