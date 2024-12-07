@@ -3,54 +3,15 @@ defmodule Chip.Benchmark.Performance do
   @chip :chip
   @process :gleam@erlang@process
 
-  def run(scenario) do
-    # inputs =
-    #   %{
-    #     "10 clocks" => 1..10,
-    #     "100 clocks" => 1..100,
-    #     "1000 clocks" => 1..1_000,
-    #     "10000 clocks" => 1..10_000,
-    #     "100000 clocks" => 1..100_000,
-    #     "1000000 clocks" => 1..1_000_000,
-    #     "10000000 clocks" => 1..10_000_000
-    #   }
-
-    scenario =
-      case scenario do
-        :members ->
-          %{
-            "a chip.members, retrieve 10" => {
-              fn {registry, id, _group} -> @chip.members(registry, id, 5000) end,
-              before_scenario: fn _set -> before_scenario(1..10) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(registry) end
-            },
-            "b chip.members, retrieve 100" => {
-              fn {registry, id, _group} -> @chip.members(registry, id, 5000) end,
-              before_scenario: fn _set -> before_scenario(1..100) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(registry) end
-            },
-            "c chip.members, retrieve 1000" => {
-              fn {registry, id, _group} -> @chip.members(registry, id, 5000) end,
-              before_scenario: fn _set -> before_scenario(1..1000) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(registry) end
-            },
-            "d chip.members, retrieve 10000" => {
-              fn {registry, id, _group} -> @chip.members(registry, id, 10_000) end,
-              before_scenario: fn _set -> before_scenario(1..10000) end,
-              before_each: fn {registry, set} -> before_each(registry, set) end,
-              after_scenario: fn {registry, _set} -> after_scenario(registry) end
-            }
-          }
-      end
-
-    Benchee.run(scenario,
-      # inputs: inputs,
-      # before_scenario: fn set -> before_scenario(@chip, set) end,
-      # before_each: fn {registry, set} -> before_each(registry, set) end,
-      # after_scenario: fn {registry, _set} -> after_scenario(@chip, registry) end,
+  def run(_scenario) do
+    Benchee.run(
+      %{
+        "chip.members" => fn {registry, id, _group} -> @chip.members(registry, id, 100) end
+      },
+      inputs: %{"100_000" => 100_0000},
+      before_scenario: fn set -> before_scenario(1..set) end,
+      before_each: fn {registry, set} -> before_each(registry, set) end,
+      after_scenario: fn {registry, _set} -> after_scenario(registry) end,
       time: 10,
       print: %{configuration: false}
     )
@@ -147,20 +108,25 @@ defmodule Chip.Benchmark.Memory do
     IO.puts("     registry:")
     subject_info(registry) |> display_info()
 
-    for id <- set do
-      @chip.members(registry, :group_a, 5000)
-      |> Enum.each(&@clock.stop(&1))
+    @chip.members(registry, :group_a, 5000)
+    |> Enum.each(fn clock ->
+      @clock.stop(clock)
+      :ok = wait_for_clear_message_queue(registry)
+    end)
 
-      @chip.members(registry, :group_b, 5000)
-      |> Enum.each(&@clock.stop(&1))
+    @chip.members(registry, :group_b, 25000)
+    |> Enum.each(fn clock ->
+      @clock.stop(clock)
+      :ok = wait_for_clear_message_queue(registry)
+    end)
 
-      @chip.members(registry, :group_c, 5000)
-      |> Enum.each(&@clock.stop(&1))
+    @chip.members(registry, :group_c, 35000)
+    |> Enum.each(fn clock ->
+      @clock.stop(clock)
+      :ok = wait_for_clear_message_queue(registry)
+    end)
 
-      if Integer.mod(id, 5000) == 0 do
-        :ok = wait_demonitor(registry)
-      end
-    end
+    :ok = wait_demonitor(registry)
 
     IO.puts("   After demonitoring...")
     IO.puts("     self:")
@@ -211,7 +177,7 @@ defmodule Chip.Benchmark.Memory do
         :ok
 
       %{message_queue_length: _length} ->
-        Process.sleep(5000)
+        Process.sleep(10)
         wait_for_clear_message_queue(subject)
     end
   end
@@ -222,7 +188,7 @@ defmodule Chip.Benchmark.Memory do
         :ok
 
       %{monitors: _monitors} ->
-        Process.sleep(5000)
+        Process.sleep(10)
         wait_demonitor(subject)
     end
   end
