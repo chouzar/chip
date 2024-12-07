@@ -11,10 +11,8 @@ import gleam/erlang
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/function
-import gleam/io
 import gleam/otp/actor
 import gleam/result.{try}
-import gleam/string
 import lamb.{Bag, Protected, Public, Set}
 import lamb/query as q
 import lamb/query/term as t
@@ -205,7 +203,7 @@ type Monitor =
 /// Chip's internal message type.
 pub opaque type Message(msg, group) {
   Register(Subject(msg), group)
-  Demonitor(Monitor, Pid)
+  Deregister(Monitor, Pid)
   GroupStore(Subject(lamb.Table(#(group, Pid), Subject(msg))))
   NoOperation(dynamic.Dynamic)
   Stop
@@ -264,16 +262,15 @@ fn loop(
 
     Register(subject, group) -> {
       let pid = process.subject_owner(subject)
-      // TODO: Lets avoid creating multiple independent monitors if pid is already registered
-      let _monitor = process.monitor_process(pid)
 
+      let Nil = monitor_once(state.groups, pid)
       lamb.insert(state.groups, #(group, pid), subject)
 
       state
       |> actor.continue()
     }
 
-    Demonitor(monitor, pid) -> {
+    Deregister(monitor, pid) -> {
       let Nil = demonitor(monitor)
 
       let query =
@@ -286,12 +283,7 @@ fn loop(
       |> actor.continue()
     }
 
-    NoOperation(message) -> {
-      io.println(
-        "chip: received an out of bound message from a non-selected process.\n"
-        <> string.inspect(message),
-      )
-
+    NoOperation(_message) -> {
       state
       |> actor.continue()
     }
@@ -327,18 +319,36 @@ fn initialize_groups_store() -> lamb.Table(#(group, Pid), Subject(msg)) {
   }
 }
 
-// TODO: Change back to selecting_process_down
-// The process.selecting_process_down function accumulates selections
-// and would rather avoid this memory hit.
-fn process_down(message) {
+fn process_down(message) -> Message(msg, group) {
+  // The function process.selecting_process_down accumulates selections
+  // which can signify a memory increase.
   case decode_down_message(message) {
     Ok(ProcessDown(monitor, pid)) -> {
-      Demonitor(monitor, pid)
+      Deregister(monitor, pid)
     }
 
     Error(Nil) -> {
       NoOperation(message)
     }
+  }
+}
+
+fn monitor_once(
+  groups: lamb.Table(#(group, Pid), Subject(msg)),
+  pid: Pid,
+) -> Nil {
+  let query =
+    q.new()
+    |> q.index(#(t.any(), pid))
+
+  // TODO: Profile this function while the registry grows
+  case lamb.batch(groups, by: 1, where: query) {
+    lamb.End([]) -> {
+      let _monitor = process.monitor_process(pid)
+      Nil
+    }
+
+    _other -> Nil
   }
 }
 
