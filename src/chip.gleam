@@ -15,6 +15,7 @@ import gleam/io
 import gleam/option
 import gleam/otp/actor
 import gleam/result.{try}
+import gleam/set
 import gleam/string
 import lamb.{Bag, Protected, Public, Set}
 import lamb/query as q
@@ -184,6 +185,33 @@ pub fn members(
     |> q.map(fn(_index, record) { record })
 
   lamb.search(group_store, query)
+}
+
+/// Retrieves all groups on the registry. The order of retrieved
+/// group names is not guaranteed.
+///
+/// ## Example
+///
+/// ```gleam
+/// let assert Ok(registry) = chip.start(chip.Unnamed)
+///
+/// chip.register(registry, GroupA, subject)
+/// chip.register(registry, GroupB, subject)
+/// chip.register(registry, GroupC, subject)
+///
+/// let assert [_, _, _] = chip.groups(registry, 50)
+/// ```
+pub fn groups(registry: Registry(msg, group), timeout: Int) -> List(group) {
+  let group_store = process.call(registry, GroupStore(_), timeout)
+
+  let query =
+    q.new()
+    |> q.index(#(t.var(1), t.any()))
+    |> q.map(fn(_index, _record) { t.var(1) })
+
+  lamb.search(group_store, query)
+  |> set.from_list()
+  |> set.to_list()
 }
 
 /// Stops the registry.

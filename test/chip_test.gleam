@@ -76,6 +76,31 @@ pub fn cannot_retrieve_duplicate_subjects_test() {
   let assert [_] = chip.members(registry, Nil, 50)
 }
 
+//*---------------- groups test --------------*//
+
+pub fn can_retrieve_all_recorded_groups_test() {
+  let assert Ok(registry) = chip.start(chip.Unnamed)
+
+  chip.register(registry, RoomA, process.new_subject())
+  chip.register(registry, RoomB, process.new_subject())
+  chip.register(registry, RoomC, process.new_subject())
+
+  let assert [_, _, _] = chip.groups(registry, 50)
+}
+
+pub fn retrieves_a_single_instance_of_each_group_test() {
+  let assert Ok(registry) = chip.start(chip.Unnamed)
+
+  chip.register(registry, RoomA, process.new_subject())
+  chip.register(registry, RoomB, process.new_subject())
+  chip.register(registry, RoomB, process.new_subject())
+  chip.register(registry, RoomC, process.new_subject())
+  chip.register(registry, RoomC, process.new_subject())
+  chip.register(registry, RoomC, process.new_subject())
+
+  let assert [_, _, _] = chip.groups(registry, 50)
+}
+
 //*---------------- dispatch tests --------------*//
 
 pub fn dispatch_is_applied_over_subjects_test() {
@@ -215,7 +240,7 @@ pub fn main() {
   gleeunit.main()
 }
 
-type Room {
+pub type Room {
   RoomA
   RoomB
   RoomC
