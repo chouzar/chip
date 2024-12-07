@@ -74,7 +74,7 @@ pub type Named {
 /// You may retrieve now this registry's by using the `from` function.
 pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
   let init = fn() { init(named) }
-  actor.start_spec(actor.Spec(init: init, init_timeout: 10, loop: loop))
+  actor.start_spec(actor.Spec(init: init, init_timeout: 100, loop: loop))
 }
 
 /// Retrieves a previously named registry.
