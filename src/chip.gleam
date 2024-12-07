@@ -341,15 +341,15 @@ fn monitor_once(
     q.new()
     |> q.index(#(t.any(), pid))
 
-  // TODO: Profile this function while the registry grows
-  case lamb.batch(groups, by: 1, where: query) {
-    lamb.End([]) -> {
-      let _monitor = process.monitor_process(pid)
-      Nil
-    }
-
+  case lamb.count(groups, where: query) {
+    0 -> monitor(pid)
     _other -> Nil
   }
+}
+
+fn monitor(pid: Pid) -> Nil {
+  let _monitor = process.monitor_process(pid)
+  Nil
 }
 
 @external(erlang, "chip_erlang_ffi", "decode_down_message")
