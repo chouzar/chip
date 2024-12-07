@@ -6,7 +6,7 @@ import gleam/otp/supervisor
 import gleam/result
 import gleeunit
 
-//*---------------- lookup tests -------------------*//
+//*---------------- from tests -------------------*//
 
 pub fn can_retrieve_a_named_registry_test() {
   let _ = chip.start(chip.Named("game-sessions"))
@@ -30,9 +30,9 @@ pub fn can_retrieve_records_form_a_named_registry_test() {
   let assert [_, _, _] = chip.members(registry, Nil, 50)
 }
 
-//*---------------- lookup tests -------------------*//
+//*---------------- members tests -------------------*//
 
-pub fn can_retrieve_all_registered_subjects_test() {
+pub fn can_retrieve_subjects_from_group_test() {
   let assert Ok(registry) = chip.start(chip.Unnamed)
 
   let assert Ok(session_1) = game.start(DrawCard)
@@ -54,7 +54,7 @@ pub fn can_retrieve_all_registered_subjects_test() {
   let assert [_, _, _] = chip.members(registry, RoomC, 50)
 }
 
-pub fn can_retrieve_different_subjects_of_same_process_test() {
+pub fn can_retrieve_individual_subjects_of_same_process_test() {
   let assert Ok(registry) = chip.start(chip.Unnamed)
 
   process.new_subject() |> chip.register(registry, Nil, _)
