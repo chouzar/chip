@@ -8,7 +8,7 @@ defmodule Chip.Benchmark.Performance do
       %{
         "chip.members" => fn {registry, id, _group} -> @chip.members(registry, id, 100) end
       },
-      inputs: %{"100_000" => 100_0000},
+      inputs: %{"10_000" => 10_000},
       before_scenario: fn set -> before_scenario(1..set) end,
       before_each: fn {registry, set} -> before_each(registry, set) end,
       after_scenario: fn {registry, _set} -> after_scenario(registry) end,
