@@ -12,7 +12,6 @@ import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/function
 import gleam/io
-import gleam/option
 import gleam/otp/actor
 import gleam/result.{try}
 import gleam/string
