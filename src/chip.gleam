@@ -304,9 +304,7 @@ fn initialize_named_registries_store() -> lamb.Table(
       case lamb.create(registry_store, Public, Set, True) {
         Ok(table) -> table
         Error(_error) ->
-          panic as {
-            "Unexpected error trying to initialize chip's named registries ETS store"
-          }
+          panic as { "Unexpected error trying to initialize chip's ETS store" }
       }
   }
 }
