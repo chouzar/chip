@@ -45,9 +45,15 @@ New additions to the API will be considered with care. Features are
 [documented as Issues](https://github.com/chouzar/chip/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement)
 on the project's repo, if you have questions or like to see a new feature please open an issue.
 
-For benchmarks run:
+Run tests:
 
-```bash
+```sh
+gleam test
+```
+
+Run benchmarks:
+
+```sh
 gleam run --module benchmark
 ```
 
