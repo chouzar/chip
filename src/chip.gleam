@@ -13,11 +13,13 @@ import gleam/erlang/process.{type Pid, type Subject}
 import gleam/function
 import gleam/otp/actor
 import gleam/result.{try}
-import lamb.{Bag, Protected, Public, Set}
+import lamb.{Bag, Private, Protected, Public, Set}
 import lamb/query as q
 import lamb/query/term as t
 
 const registry_store = "chip_registries"
+
+const monitor_store = "chip_monitors"
 
 const group_store = "chip_groups"
 
@@ -107,13 +109,7 @@ pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
 pub fn from(name: String) -> Result(Registry(msg, group), Nil) {
   use table <- try(lamb.from_name(registry_store))
 
-  let query =
-    q.new()
-    |> q.index(name)
-    |> q.record(t.var(1))
-    |> q.map(fn(_index, record) { record })
-
-  case lamb.search(table, query) {
+  case lamb.lookup(table, name) {
     [] -> Error(Nil)
     [registry] -> Ok(registry)
     [_, ..] ->
@@ -213,6 +209,8 @@ type State(msg, group) {
   State(
     // This config dictates how many max tasks to launch on a dispatch.
     concurrency: Int,
+    // Store to track monitored pids, to avoid duplicate monitored pids.
+    monitors: lamb.Table(Pid, Nil),
     // Store for all grouped subjects, the indexed pid helps to identify already monitored processess.
     groups: lamb.Table(#(group, Pid), Subject(msg)),
   )
@@ -235,9 +233,11 @@ fn init(
   }
 
   let concurrency = schedulers()
+  let monitors = initialize_monitors_store()
   let groups = initialize_groups_store()
 
-  let state = State(concurrency: concurrency, groups: groups)
+  let state =
+    State(concurrency: concurrency, monitors: monitors, groups: groups)
 
   let selector =
     process.new_selector()
@@ -263,7 +263,8 @@ fn loop(
     Register(subject, group) -> {
       let pid = process.subject_owner(subject)
 
-      let Nil = monitor_once(state.groups, pid)
+      let Nil = monitor(state.monitors, pid)
+      lamb.insert(state.monitors, pid, Nil)
       lamb.insert(state.groups, #(group, pid), subject)
 
       state
@@ -273,11 +274,8 @@ fn loop(
     Deregister(monitor, pid) -> {
       let Nil = demonitor(monitor)
 
-      let query =
-        q.new()
-        |> q.index(#(t.any(), pid))
-
-      lamb.remove(state.groups, where: query)
+      lamb.remove(state.monitors, where: q.new() |> q.index(pid))
+      lamb.remove(state.groups, where: q.new() |> q.index(#(t.any(), pid)))
 
       state
       |> actor.continue()
@@ -309,6 +307,14 @@ fn initialize_named_registries_store() -> lamb.Table(
   }
 }
 
+fn initialize_monitors_store() -> lamb.Table(Pid, Nil) {
+  case lamb.create(monitor_store, Private, Set, False) {
+    Ok(table) -> table
+    Error(_error) ->
+      panic as { "Unexpected error trying to initialize chip's monitor store" }
+  }
+}
+
 fn initialize_groups_store() -> lamb.Table(#(group, Pid), Subject(msg)) {
   case lamb.create(group_store, Protected, Bag, False) {
     Ok(groups) -> groups
@@ -331,23 +337,14 @@ fn process_down(message) -> Message(msg, group) {
   }
 }
 
-fn monitor_once(
-  groups: lamb.Table(#(group, Pid), Subject(msg)),
-  pid: Pid,
-) -> Nil {
-  let query =
-    q.new()
-    |> q.index(#(t.any(), pid))
-
-  case lamb.count(groups, where: query) {
-    0 -> monitor(pid)
-    _other -> Nil
+fn monitor(monitors: lamb.Table(Pid, Nil), pid: Pid) -> Nil {
+  case lamb.any(monitors, pid) {
+    True -> Nil
+    False -> {
+      let _monitor = process.monitor_process(pid)
+      Nil
+    }
   }
-}
-
-fn monitor(pid: Pid) -> Nil {
-  let _monitor = process.monitor_process(pid)
-  Nil
 }
 
 @external(erlang, "chip_erlang_ffi", "decode_down_message")
