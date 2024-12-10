@@ -4,7 +4,7 @@ type Scenario {
 
 pub fn main() {
   performance(Members)
-  memory()
+  //memory()
 }
 
 @external(erlang, "Elixir.Chip.Benchmark.Performance", "run")
