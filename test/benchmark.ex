@@ -1,9 +1,9 @@
-defmodule Chip.Benchmark.Performance do
+defmodule Chip.Benchmark do
   @clock :artifacts@clock
   @chip :chip
   @process :gleam@erlang@process
 
-  def run(_scenario) do
+  def run_benchmark() do
     inputs = %{"10000 records" => 10_000}
 
     Benchee.run(
