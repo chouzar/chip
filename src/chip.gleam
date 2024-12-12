@@ -23,7 +23,7 @@ const monitor_store = "chip_monitors"
 
 const group_store = "chip_groups"
 
-/// An shorter alias for the registry's subject.
+/// A shorter alias for the registry's subject.
 ///
 /// Sometimes, when building out your system it may be useful to state the Registry's types.
 ///
