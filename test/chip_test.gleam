@@ -17,7 +17,7 @@ pub fn cannot_retrieve_a_non_existing_registry_test() {
   let assert Error(Nil) = chip.from("non-existent")
 }
 
-pub fn can_retrieve_records_form_a_named_registry_test() {
+pub fn can_retrieve_records_from_a_named_registry_test() {
   let assert Ok(registry) = chip.start(chip.Named("game-sessions"))
 
   let register = fn(session) { chip.register(registry, Nil, session) }
