@@ -4,8 +4,11 @@
 
 pub fn main() {
   run_benchmark()
-  //memory()
+  run_memory_benchmark()
 }
 
 @external(erlang, "Elixir.Chip.Benchmark", "run_benchmark")
 fn run_benchmark() -> x
+
+@external(erlang, "Elixir.Chip.Benchmark.Memory", "run_benchmark")
+fn run_memory_benchmark() -> x

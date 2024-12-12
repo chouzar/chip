@@ -72,7 +72,7 @@ defmodule Chip.Benchmark.Memory do
   @chip :chip
   @process :gleam@erlang@process
 
-  def run() do
+  def run_benchmark() do
     set = 1..10_000
 
     IO.puts("\n---------------------------------- THE START ----------------------------------\n")
@@ -83,10 +83,7 @@ defmodule Chip.Benchmark.Memory do
 
     IO.puts("\n--- Rough memory measurements ---\n")
 
-    IO.puts("   Before registration...")
-    # IO.puts("     self:")
-    # process_info(self()) |> display_info()
-    IO.puts("     registry:")
+    IO.puts("   Before registration:")
     subject_info(registry) |> display_info()
 
     for id <- set do
@@ -98,37 +95,8 @@ defmodule Chip.Benchmark.Memory do
       end
     end
 
-    IO.puts("   After registration...")
-    # IO.puts("     self:")
-    # process_info(self()) |> display_info()
-    IO.puts("     registry:")
+    IO.puts("   After registration:")
     subject_info(registry) |> display_info()
-
-    # @chip.members(registry, :group_a, 5000)
-    # |> Enum.each(fn clock ->
-    #   @clock.stop(clock)
-    #   :ok = wait_for_clear_message_queue(registry)
-    # end)
-
-    # @chip.members(registry, :group_b, 25000)
-    # |> Enum.each(fn clock ->
-    #   @clock.stop(clock)
-    #   :ok = wait_for_clear_message_queue(registry)
-    # end)
-
-    # @chip.members(registry, :group_c, 35000)
-    # |> Enum.each(fn clock ->
-    #   @clock.stop(clock)
-    #   :ok = wait_for_clear_message_queue(registry)
-    # end)
-
-    # :ok = wait_demonitor(registry)
-
-    # IO.puts("   After demonitoring...")
-    # IO.puts("     self:")
-    # process_info(self()) |> display_info()
-    # IO.puts("     registry:")
-    # subject_info(registry) |> display_info()
 
     IO.puts("\n----------------------------------- THE END -----------------------------------\n")
   end
@@ -175,17 +143,6 @@ defmodule Chip.Benchmark.Memory do
       %{message_queue_length: _length} ->
         Process.sleep(10)
         wait_for_clear_message_queue(subject)
-    end
-  end
-
-  defp wait_demonitor(subject) do
-    case subject_info(subject) do
-      %{monitors: 0} ->
-        :ok
-
-      %{monitors: _monitors} ->
-        Process.sleep(10)
-        wait_demonitor(subject)
     end
   end
 end
