@@ -10,14 +10,8 @@ defmodule Chip.Benchmark do
 
     Benchee.run(
       %{
-        "chip.members (bag) #(#(group, pid), subject)" => fn {registry, group} ->
-          @chip.members(registry, group, 100)
-        end,
         "chip.members (bag) #(group, subject)" => fn {registry, group} ->
-          @chip.members_2(registry, group, 100)
-        end,
-        "chip.members (set) #(#(group, subject), Nil)" => fn {registry, group} ->
-          @chip.members_3(registry, group, 100)
+          @chip.members(registry, group, 100)
         end
       },
       inputs: inputs,
@@ -29,38 +23,6 @@ defmodule Chip.Benchmark do
       before_each: fn registry ->
         group = Enum.random([:group_a, :group_b, :group_c])
         {registry, group}
-      end,
-      after_scenario: fn registry ->
-        @chip.stop(registry)
-      end,
-      time: 5,
-      print: %{configuration: false}
-    )
-
-    # This test is meant to check the perf characteristics of deregistering
-    Benchee.run(
-      %{
-        "chip.get_pid_1 (bag) #(#(group, pid), subject)" => fn {registry, pid} ->
-          @chip.get_pid_1(registry, pid)
-        end,
-        "chip.get_pid_2 (bag) #(group, subject)" => fn {registry, pid} ->
-          @chip.get_pid_2(registry, pid)
-        end,
-        "chip.get_pid_3 (set) #(#(group, subject), Nil)" => fn {registry, pid} ->
-          @chip.get_pid_3(registry, pid)
-        end
-      },
-      inputs: inputs,
-      before_scenario: fn quantity ->
-        {:ok, registry} = @chip.start(:unnamed)
-        initialize_registry(registry, quantity)
-        registry
-      end,
-      before_each: fn registry ->
-        group = Enum.random([:group_a, :group_b, :group_c])
-        records = @chip.members(registry, group, 100)
-        {:subject, pid, _} = Enum.random(records)
-        {registry, pid}
       end,
       after_scenario: fn registry ->
         @chip.stop(registry)

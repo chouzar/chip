@@ -19,10 +19,6 @@ const monitor_store = "chip_monitors"
 
 const group_store = "chip_groups"
 
-const group_store_2 = "chip_groups_2"
-
-const group_store_3 = "chip_groups_3"
-
 /// A shorter alias for the registry's subject.
 ///
 /// Sometimes, when building out your system it may be useful to state the Registry's types.
@@ -168,70 +164,9 @@ pub fn members(
   group: group,
   timeout: Int,
 ) -> List(Subject(msg)) {
-  let group_store = process.call(registry, GroupStore(_), timeout)
-
-  let query =
-    q.new()
-    |> q.index(#(group, t.any()))
-    |> q.record(t.var(1))
-    |> q.map(fn(_index, _record) { t.var(1) })
-
-  lamb.search(group_store, query)
-}
-
-pub fn get_pid_1(registry: Registry(msg, group), pid: Pid) -> List(Subject(msg)) {
-  let group_store = process.call(registry, GroupStore(_), 100)
-
-  let query =
-    q.new()
-    |> q.index(#(t.any(), pid))
-
-  lamb.search(group_store, query)
-}
-
-pub fn members_2(
-  registry: Registry(msg, group),
-  group: group,
-  timeout: Int,
-) -> List(Subject(msg)) {
   let group_store = process.call(registry, GroupStore2(_), timeout)
 
   lamb.lookup(group_store, group)
-}
-
-pub fn get_pid_2(registry: Registry(msg, group), pid: Pid) -> List(Subject(msg)) {
-  let group_store = process.call(registry, GroupStore2(_), 100)
-
-  let query =
-    q.new()
-    |> q.record(#(t.tag("subject"), pid, t.any()))
-
-  lamb.search(group_store, query)
-}
-
-pub fn members_3(
-  registry: Registry(msg, group),
-  group: group,
-  timeout: Int,
-) -> List(Subject(msg)) {
-  let group_store = process.call(registry, GroupStore3(_), timeout)
-
-  let query =
-    q.new()
-    |> q.index(#(group, t.var(1)))
-    |> q.map(fn(_index, _record) { t.var(1) })
-
-  lamb.search(group_store, query)
-}
-
-pub fn get_pid_3(registry: Registry(msg, group), pid: Pid) -> List(Subject(msg)) {
-  let group_store = process.call(registry, GroupStore3(_), 100)
-
-  let query =
-    q.new()
-    |> q.index(#(t.any(), #(t.tag("subject"), pid, t.any())))
-
-  lamb.search(group_store, query)
 }
 
 /// Stops the registry.
@@ -255,9 +190,7 @@ type Monitor =
 pub opaque type Message(msg, group) {
   Register(Subject(msg), group)
   Deregister(Monitor, Pid)
-  GroupStore(Subject(lamb.Table(#(group, Pid), Subject(msg))))
   GroupStore2(Subject(lamb.Table(group, Subject(msg))))
-  GroupStore3(Subject(lamb.Table(#(group, Subject(msg)), Nil)))
   NoOperation(dynamic.Dynamic)
   Stop
 }
@@ -269,9 +202,7 @@ type State(msg, group) {
     // Store to track monitored pids, to avoid duplicate monitored pids.
     monitors: lamb.Table(Pid, Nil),
     // Store for all grouped subjects, the indexed pid helps to identify already monitored processess.
-    groups: lamb.Table(#(group, Pid), Subject(msg)),
-    groups_2: lamb.Table(group, Subject(msg)),
-    groups_3: lamb.Table(#(group, Subject(msg)), Nil),
+    groups: lamb.Table(group, Subject(msg)),
   )
 }
 
@@ -294,17 +225,9 @@ fn init(
   let concurrency = schedulers()
   let monitors = initialize_monitors_store()
   let groups = initialize_groups_store()
-  let groups_2 = initialize_groups_store_2()
-  let groups_3 = initialize_groups_store_3()
 
   let state =
-    State(
-      concurrency: concurrency,
-      monitors: monitors,
-      groups: groups,
-      groups_2: groups_2,
-      groups_3: groups_3,
-    )
+    State(concurrency: concurrency, monitors: monitors, groups: groups)
 
   let selector =
     process.new_selector()
@@ -319,23 +242,9 @@ fn loop(
   state: State(msg, group),
 ) -> actor.Next(Message(msg, group), State(msg, group)) {
   case message {
-    GroupStore(client) -> {
-      // priority is given through selective receive
-      process.send(client, state.groups)
-
-      state
-      |> actor.continue()
-    }
     GroupStore2(client) -> {
       // priority is given through selective receive
-      process.send(client, state.groups_2)
-
-      state
-      |> actor.continue()
-    }
-    GroupStore3(client) -> {
-      // priority is given through selective receive
-      process.send(client, state.groups_3)
+      process.send(client, state.groups)
 
       state
       |> actor.continue()
@@ -346,9 +255,7 @@ fn loop(
 
       let Nil = monitor(state.monitors, pid)
       lamb.insert(state.monitors, pid, Nil)
-      lamb.insert(state.groups, #(group, pid), subject)
-      lamb.insert(state.groups_2, group, subject)
-      lamb.insert(state.groups_3, #(group, subject), Nil)
+      lamb.insert(state.groups, group, subject)
 
       state
       |> actor.continue()
@@ -358,17 +265,10 @@ fn loop(
       let Nil = demonitor(monitor)
 
       lamb.remove(state.monitors, where: q.new() |> q.index(pid))
-      lamb.remove(state.groups, where: q.new() |> q.index(#(t.any(), pid)))
-      let match_subject_pid = #(t.tag("subject"), pid, t.any())
       lamb.remove(
-        state.groups_2,
+        state.groups,
         where: q.new()
-          |> q.record(match_subject_pid),
-      )
-      lamb.remove(
-        state.groups_3,
-        where: q.new()
-          |> q.index(#(t.any(), match_subject_pid)),
+          |> q.record(#(t.tag("subject"), pid, t.any())),
       )
 
       state
@@ -409,24 +309,8 @@ fn initialize_monitors_store() -> lamb.Table(Pid, Nil) {
   }
 }
 
-fn initialize_groups_store() -> lamb.Table(#(group, Pid), Subject(msg)) {
+fn initialize_groups_store() -> lamb.Table(group, Subject(msg)) {
   case lamb.create(group_store, Protected, Bag, False) {
-    Ok(groups) -> groups
-    Error(_error) ->
-      panic as { "Unexpected error trying to initialize chip's subject store" }
-  }
-}
-
-fn initialize_groups_store_2() -> lamb.Table(group, Subject(msg)) {
-  case lamb.create(group_store_2, Protected, Bag, False) {
-    Ok(groups) -> groups
-    Error(_error) ->
-      panic as { "Unexpected error trying to initialize chip's subject store" }
-  }
-}
-
-fn initialize_groups_store_3() -> lamb.Table(#(group, Subject(msg)), Nil) {
-  case lamb.create(group_store_3, Protected, lamb.OrderedSet, False) {
     Ok(groups) -> groups
     Error(_error) ->
       panic as { "Unexpected error trying to initialize chip's subject store" }

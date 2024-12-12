@@ -53,12 +53,6 @@ pub fn can_retrieve_subjects_from_group_test() {
   let assert [_] = chip.members(registry, RoomA, 50)
   let assert [_, _] = chip.members(registry, RoomB, 50)
   let assert [_, _, _] = chip.members(registry, RoomC, 50)
-  let assert [_] = chip.members_2(registry, RoomA, 50)
-  let assert [_, _] = chip.members_2(registry, RoomB, 50)
-  let assert [_, _, _] = chip.members_2(registry, RoomC, 50)
-  let assert [_] = chip.members_3(registry, RoomA, 50)
-  let assert [_, _] = chip.members_3(registry, RoomB, 50)
-  let assert [_, _, _] = chip.members_3(registry, RoomC, 50)
 }
 
 pub fn can_retrieve_same_subject_from_different_groups_test() {
@@ -75,18 +69,6 @@ pub fn can_retrieve_same_subject_from_different_groups_test() {
   let assert [session_c] = chip.members(registry, RoomC, 50)
   should.be_true(session == session_a)
   should.be_true(session_a == session_b && session_b == session_c)
-
-  let assert [session_a] = chip.members_2(registry, RoomA, 50)
-  let assert [session_b] = chip.members_2(registry, RoomB, 50)
-  let assert [session_c] = chip.members_2(registry, RoomC, 50)
-  should.be_true(session == session_a)
-  should.be_true(session_a == session_b && session_b == session_c)
-
-  let assert [session_a] = chip.members_3(registry, RoomA, 50)
-  let assert [session_b] = chip.members_3(registry, RoomB, 50)
-  let assert [session_c] = chip.members_3(registry, RoomC, 50)
-  should.be_true(session == session_a)
-  should.be_true(session_a == session_b && session_b == session_c)
 }
 
 pub fn can_retrieve_individual_subjects_of_same_process_test() {
@@ -97,8 +79,6 @@ pub fn can_retrieve_individual_subjects_of_same_process_test() {
   process.new_subject() |> chip.register(registry, Nil, _)
 
   let assert [_, _, _] = chip.members(registry, Nil, 50)
-  let assert [_, _, _] = chip.members_2(registry, Nil, 50)
-  let assert [_, _, _] = chip.members_3(registry, Nil, 50)
 }
 
 pub fn cannot_retrieve_duplicate_subjects_test() {
@@ -111,8 +91,6 @@ pub fn cannot_retrieve_duplicate_subjects_test() {
   self |> chip.register(registry, Nil, _)
 
   let assert [_] = chip.members(registry, Nil, 50)
-  let assert [_] = chip.members_2(registry, Nil, 50)
-  let assert [_] = chip.members_3(registry, Nil, 50)
 }
 
 //*---------------- dispatch tests --------------*//
