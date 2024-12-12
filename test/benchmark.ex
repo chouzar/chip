@@ -4,12 +4,20 @@ defmodule Chip.Benchmark do
   @process :gleam@erlang@process
 
   def run_benchmark() do
-    inputs = %{"10000 records" => 10_000}
+    inputs = %{
+      "10000 records" => 10000
+    }
 
     Benchee.run(
       %{
-        "chip.members" => fn {registry, group} ->
+        "chip.members (bag) #(#(group, pid), subject)" => fn {registry, group} ->
           @chip.members(registry, group, 100)
+        end,
+        "chip.members (bag) #(group, subject)" => fn {registry, group} ->
+          @chip.members_2(registry, group, 100)
+        end,
+        "chip.members (set) #(#(group, subject), Nil)" => fn {registry, group} ->
+          @chip.members_3(registry, group, 100)
         end
       },
       inputs: inputs,
@@ -21,6 +29,38 @@ defmodule Chip.Benchmark do
       before_each: fn registry ->
         group = Enum.random([:group_a, :group_b, :group_c])
         {registry, group}
+      end,
+      after_scenario: fn registry ->
+        @chip.stop(registry)
+      end,
+      time: 5,
+      print: %{configuration: false}
+    )
+
+    # This test is meant to check the perf characteristics of deregistering
+    Benchee.run(
+      %{
+        "chip.get_pid_1 (bag) #(#(group, pid), subject)" => fn {registry, pid} ->
+          @chip.get_pid_1(registry, pid)
+        end,
+        "chip.get_pid_2 (bag) #(group, subject)" => fn {registry, pid} ->
+          @chip.get_pid_2(registry, pid)
+        end,
+        "chip.get_pid_3 (set) #(#(group, subject), Nil)" => fn {registry, pid} ->
+          @chip.get_pid_3(registry, pid)
+        end
+      },
+      inputs: inputs,
+      before_scenario: fn quantity ->
+        {:ok, registry} = @chip.start(:unnamed)
+        initialize_registry(registry, quantity)
+        registry
+      end,
+      before_each: fn registry ->
+        group = Enum.random([:group_a, :group_b, :group_c])
+        records = @chip.members(registry, group, 100)
+        {:subject, pid, _} = Enum.random(records)
+        {registry, pid}
       end,
       after_scenario: fn registry ->
         @chip.stop(registry)
@@ -40,17 +80,13 @@ defmodule Chip.Benchmark do
     nil
   end
 
-  # https://www.erlang.org/doc/system/profiling.html#never-guess-about-performance-bottlenecks
-  # https://www.erlang.org/doc/system/profiling.html#memory-profiling
-  # https://www.erlang.org/doc/apps/erts/erlang#process_info/2
-
   defp wait_for_clear_message_queue(subject) do
     case subject_info(subject) do
       %{message_queue_length: 0} ->
         :ok
 
       %{message_queue_length: _length, monitors: _monitors} ->
-        Process.sleep(5000)
+        Process.sleep(10)
         wait_for_clear_message_queue(subject)
     end
   end
