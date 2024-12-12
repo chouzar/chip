@@ -2,10 +2,6 @@
 //// registry that can reference subjects individually or as part of a group. Will also
 //// automatically delist dead processes.
 
-// TODO: Rework docs and test docs.
-// TODO: Document plan to research persistent term for the chip_registries table.
-// TODO: Document plan for a dispatch function.
-
 import gleam/dynamic
 import gleam/erlang
 import gleam/erlang/atom
