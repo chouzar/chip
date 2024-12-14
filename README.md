@@ -3,7 +3,7 @@
 [![Package Version](https://img.shields.io/hexpm/v/chip)](https://hex.pm/packages/chip)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
-Chip is capable of registering a set of subjects
+Chip is capable of registering a set of
 [subjects](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject)
 as part of a group.
 
