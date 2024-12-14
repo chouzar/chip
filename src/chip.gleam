@@ -1,5 +1,5 @@
 //// Chip is a local [subject](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject)
-//// registry that can reference subjects individually or as part of a group. Will also
+//// registry that can store Gleam process subjects as part of a group. Will also
 //// automatically delist dead processes.
 
 import gleam/dynamic
@@ -20,24 +20,6 @@ const monitor_store = "chip_monitors"
 const group_store = "chip_groups"
 
 /// A shorter alias for the registry's subject.
-///
-/// Sometimes, when building out your system it may be useful to state the Registry's types.
-///
-/// ## Example
-///
-/// ```gleam
-/// let assert Ok(registry) = chip.start(chip.Unnamed)
-/// let registry: chip.Registry(Event, Topic)
-/// ```
-///
-/// Which is equivalent to:
-///
-/// ```gleam
-/// let assert Ok(registry) = chip.start()
-/// let registry: process.Subject(chip.Message(Event, Topic))
-/// ```
-///
-/// By specifying the types we can document the kind of registry we are working with.
 pub type Registry(msg, group) =
   Subject(Message(msg, group))
 
@@ -53,20 +35,18 @@ pub type Named {
 ///
 /// ## Example
 ///
-/// Normally, the registry may be started in an unnamed fashion. ///
+/// The registry may be started in an unnamed fashion.
+///
 /// ```gleam
 /// > let assert Ok(registry) = chip.start(chip.Unnamed)
 /// ```
 ///
-/// You will need to provide a mechanism to carry around the registry's subject
-/// through your system.
-///
-/// It is also possible to start a named registry.
+/// As a convenience, it is also possible to start a named registry which can be
+/// retrieved later by using [from](#from).
 ///
 /// ```gleam
 /// > let _ = chip.start(chip.Named("sessions"))
-///
-/// You may retrieve now this registry's by using the `from` function.
+/// ```
 pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
   let init = fn() { init(named) }
   actor.start_spec(actor.Spec(init: init, init_timeout: 100, loop: loop))
@@ -76,21 +56,24 @@ pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
 ///
 /// ## Example
 ///
+/// This function can be useful when there is no registry subject in scope.
+///
 /// ```gleam
 /// let _ = chip.start(chip.Named("sessions"))
 /// let assert Ok(registry) = chip.from("sessions")
 /// ```
 ///
-/// This function can be useful when you don't have the registry's subject in scope.
-/// Ideally, you would carry around the registry's subject down your pipeline and
-/// always have it available but this can become hard to mantains if you don't
-/// already provide a solid solution for your system.
-///
-/// Be mindful that using it means you lose type safety as the `from` function only
-/// knows you return a registry but it doesn't know the message type or the group
-/// type. It would not be a bad idea to wrap it under a typed function:
+/// Be mindful that using `from` means you lose type safety as the original `group` and
+/// subject `message` will be not inferred from it. To circunvent this it is possible
+/// to manually specify the type signature.
 ///
 /// ```gleam
+/// let assert Ok(registry) = chip.from("sessions")
+///
+/// // specify through a typed variable
+/// let registry: chip.Registry(Message, Groups)
+///
+/// // specify through a helper function
 /// fn get_session(name: String) -> chip.Registry(Message, Groups) {
 ///   case chip.from("sessions") {
 ///     Ok(registry) -> registry
@@ -98,10 +81,6 @@ pub fn start(named: Named) -> Result(Registry(msg, group), actor.StartError) {
 ///   }
 /// }
 /// ```
-///
-/// Even with the wrapper above, there's no guarantee of retrieving the right subject
-/// as a typo on the name might return a registry with different message types
-/// and groups.
 pub fn from(name: String) -> Result(Registry(msg, group), Nil) {
   use table <- try(lamb.from_name(registry_store))
 
@@ -132,10 +111,6 @@ pub fn from(name: String) -> Result(Registry(msg, group), Nil) {
 ///
 /// A subject may be registered under multiple groups but it may only be
 /// registered one time on each group.
-///
-/// It is possibel to register any subject at any point in time but keeping
-/// it under the initialization step of your process may help to keep things
-/// organized and tidy.
 pub fn register(
   registry: Registry(msg, group),
   group: group,
@@ -144,7 +119,7 @@ pub fn register(
   process.send(registry, Register(subject, group))
 }
 
-/// Retrieves all subjects from a given group. The order of retrieved
+/// Retrieves all subjects from a given group, order of retrieved
 /// subjects is not guaranteed.
 ///
 /// ## Example
@@ -318,8 +293,8 @@ fn initialize_groups_store() -> lamb.Table(group, Subject(msg)) {
 }
 
 fn process_down(message) -> Message(msg, group) {
-  // The function process.selecting_process_down accumulates selections
-  // which can signify a memory increase.
+  // Could have used process.selecting_process_down but wanted to avoid
+  // accumulating a big quantity selections at the actor level.
   case decode_down_message(message) {
     Ok(ProcessDown(monitor, pid)) -> {
       Deregister(monitor, pid)

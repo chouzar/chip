@@ -3,13 +3,13 @@
 [![Package Version](https://img.shields.io/hexpm/v/chip)](https://hex.pm/packages/chip)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/chip/)
 
-Chip enables you to register a set of
+Chip is capable of registering a set of subjects
 [subjects](https://hexdocs.pm/gleam_erlang/gleam/erlang/process.html#Subject)
 as part of a group.
 
 ## Example
 
-We can categorize subjects in groups, then send messages to them:
+Categorize subjects in groups, then send messages to them:
 
 ```gleam
 import artifacts/game.{DrawCard, FireDice, PlayChip}
@@ -69,7 +69,7 @@ This registry takes and combines some ideas from:
 
 Other registry libraries will provide different semantics and functionality:
 
-* [Singularity](https://hexdocs.pm/singularity/) is designed to register a fixed number of actors, each of which may have a different message type.
+* [Singularity](https://hexdocs.pm/singularity/) is designed to register a fixed number of actors, where each one may have a different message type.
 
 ## Installation
 
